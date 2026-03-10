@@ -8,7 +8,11 @@ Handles:
 import logging
 from typing import Optional
 
-import stripe
+try:
+    import stripe
+except ImportError:
+    stripe = None
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
@@ -20,7 +24,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["Billing"])
 
 PLAN_PRICE_IDS = {
-    "starter": "starter",   # resolved from settings at runtime
+    "starter": "starter",
     "growth": "growth",
     "scale": "scale",
 }
@@ -34,6 +38,8 @@ TIER_LIMITS = {
 
 
 def get_stripe():
+    if stripe is None:
+        raise HTTPException(status_code=503, detail="Stripe not installed")
     settings = get_settings()
     if not settings.stripe_secret_key:
         raise HTTPException(status_code=503, detail="Billing not configured")
@@ -41,10 +47,8 @@ def get_stripe():
     return stripe
 
 
-# ─── Models ───────────────────────────────────────────────────────────────────
-
 class CheckoutRequest(BaseModel):
-    plan: str                           # "starter" | "growth" | "scale"
+    plan: str
     success_url: str = "https://app.llmdriftmonitor.com/billing/success"
     cancel_url: str = "https://app.llmdriftmonitor.com/billing"
 
@@ -53,14 +57,11 @@ class PortalRequest(BaseModel):
     return_url: str = "https://app.llmdriftmonitor.com/billing"
 
 
-# ─── Routes ───────────────────────────────────────────────────────────────────
-
 @router.post("/checkout")
 async def create_checkout_session(
     body: CheckoutRequest,
     current_user: dict = Depends(get_current_user_from_jwt),
 ):
-    """Create a Stripe Checkout session for plan upgrade."""
     s = get_stripe()
     settings = get_settings()
 
@@ -73,7 +74,6 @@ async def create_checkout_session(
     if not price_id:
         raise HTTPException(status_code=400, detail=f"Unknown plan: {body.plan}")
 
-    # Get or create Stripe customer
     customer_id = current_user.get("stripe_customer_id")
     if not customer_id:
         customer = s.Customer.create(
@@ -104,7 +104,6 @@ async def create_customer_portal(
     body: PortalRequest,
     current_user: dict = Depends(get_current_user_from_jwt),
 ):
-    """Create a Stripe Customer Portal session for managing subscription."""
     s = get_stripe()
     customer_id = current_user.get("stripe_customer_id")
     if not customer_id:
@@ -119,7 +118,6 @@ async def create_customer_portal(
 
 @router.get("/subscription")
 async def get_subscription(current_user: dict = Depends(get_current_user_from_jwt)):
-    """Get current subscription details."""
     limits = TIER_LIMITS.get(current_user["subscription_tier"], 50_000)
     return {
         "tier": current_user["subscription_tier"],
@@ -132,11 +130,6 @@ async def get_subscription(current_user: dict = Depends(get_current_user_from_jw
 
 @router.post("/webhook", include_in_schema=False)
 async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
-    """
-    Handle Stripe webhook events.
-    Configure in Stripe Dashboard → Webhooks → Add endpoint.
-    Events: customer.subscription.updated, customer.subscription.deleted
-    """
     settings = get_settings()
     if not settings.stripe_webhook_secret:
         raise HTTPException(status_code=503, detail="Webhook not configured")
@@ -148,7 +141,7 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
         event = s.Webhook.construct_event(
             payload, stripe_signature, settings.stripe_webhook_secret
         )
-    except stripe.error.SignatureVerificationError:
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
     supabase = get_supabase()
@@ -157,8 +150,6 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
         sub = event["data"]["object"]
         customer_id = sub["customer"]
         new_status = sub["status"]
-
-        # Determine plan tier from price ID
         price_id = sub["items"]["data"][0]["price"]["id"]
         tier = _price_id_to_tier(price_id, settings)
 
@@ -177,7 +168,6 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
                 "stripe_subscription_id": sub["id"],
                 "monthly_request_limit": limit if limit != -1 else 999_999_999,
             }).eq("id", user_result.data["id"]).execute()
-            logger.info(f"User {user_result.data['id']} upgraded to {tier} ({new_status})")
 
     elif event["type"] == "customer.subscription.deleted":
         sub = event["data"]["object"]
@@ -195,7 +185,6 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
                 "subscription_status": "cancelled",
                 "monthly_request_limit": 50_000,
             }).eq("id", user_result.data["id"]).execute()
-            logger.info(f"Subscription cancelled for user {user_result.data['id']}")
 
     return {"received": True}
 
