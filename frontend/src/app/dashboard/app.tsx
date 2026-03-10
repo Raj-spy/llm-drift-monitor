@@ -546,9 +546,12 @@ export default function App() {
 
   useEffect(() => {
     if (!token) return
-    projectsApi.list(token).then(ps => { setProjects(ps); if (ps.length > 0) setCurrentProject(ps[0]) }).catch(()=>{})
+    projectsApi.list(token).then(ps => { setProjects(ps); if (ps.length > 0) {
+    setCurrentProject(ps[0])
+} else {
+    router.replace('/onboarding') } }).catch(()=>{})
   }, [token])
-
+ 
   const loadData = useCallback(async () => {
     if (!currentProject || !token) return
     setLoading(true)
