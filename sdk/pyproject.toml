@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-monitor"
+version = "0.1.0"
+description = "Production LLM observability — cost, latency, and quality drift monitoring"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "LLM Drift Monitor", email = "sdk@llmdriftmonitor.com"}]
+requires-python = ">=3.9"
+keywords = ["llm", "observability", "monitoring", "openai", "anthropic", "cost"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "httpx>=0.25.0",
+]
+
+[project.optional-dependencies]
+openai = ["openai>=1.0.0"]
+anthropic = ["anthropic>=0.25.0"]
+all = ["openai>=1.0.0", "anthropic>=0.25.0"]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio",
+    "pytest-mock",
+    "openai>=1.0.0",
+    "anthropic>=0.25.0",
+    "ruff",
+    "mypy",
+]
+
+[project.urls]
+Homepage = "https://llmdriftmonitor.com"
+Documentation = "https://docs.llmdriftmonitor.com"
+Repository = "https://github.com/llmdriftmonitor/sdk-python"
+Issues = "https://github.com/llmdriftmonitor/sdk-python/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["llm_monitor*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.mypy]
+python_version = "3.9"
+strict = true

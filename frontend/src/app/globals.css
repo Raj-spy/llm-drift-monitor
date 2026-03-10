@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-bg: #030712;
+  --color-surface: #0f172a;
+  --color-surface-2: #1e293b;
+  --color-border: #1e293b;
+  --color-border-subtle: #0f172a;
+  --color-text: #f1f5f9;
+  --color-text-muted: #64748b;
+  --color-accent: #6366f1;
+  --color-accent-hover: #818cf8;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Glow effects */
+.glow-indigo {
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.15);
+}
+.glow-green {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+}
+.glow-red {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
+}
+
+/* Card base */
+.card {
+  @apply bg-slate-900 border border-slate-800 rounded-xl;
+}
+
+/* Stat badge */
+.badge-up { @apply text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full text-xs font-medium; }
+.badge-down { @apply text-red-400 bg-red-400/10 px-2 py-0.5 rounded-full text-xs font-medium; }
+.badge-neutral { @apply text-slate-400 bg-slate-700 px-2 py-0.5 rounded-full text-xs font-medium; }
