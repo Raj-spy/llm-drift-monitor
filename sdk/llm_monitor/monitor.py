@@ -1,16 +1,14 @@
 """
-Core LLM Monitor — wraps OpenAI and Anthropic calls transparently.
+Core LLM Monitor — wraps OpenAI, Anthropic, and Groq calls transparently.
 """
-import asyncio
-import json
 import logging
+import os
 import queue
 import threading
 import time
 import uuid
-from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Generator, Iterator, Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -39,10 +37,8 @@ class RequestEvent:
 
 
 class BatchFlusher:
-    """
-    Background thread that batches and flushes events to the backend.
-    Thread-safe, non-blocking for the caller.
-    """
+    """Background thread that batches and flushes events to the backend."""
+
     def __init__(self, config: MonitorConfig):
         self.config = config
         self._queue: queue.Queue[RequestEvent] = queue.Queue(maxsize=config.max_queue_size)
@@ -52,7 +48,6 @@ class BatchFlusher:
         self._thread.start()
 
     def enqueue(self, event: RequestEvent) -> bool:
-        """Add event to queue. Returns False if queue is full (event dropped)."""
         try:
             self._queue.put_nowait(event)
             return True
@@ -61,7 +56,8 @@ class BatchFlusher:
             return False
 
     def flush(self) -> None:
-        """Force immediate flush of all queued events."""
+        import time
+        time.sleep(0.6)  # background thread ko process karne do
         events = []
         while not self._queue.empty():
             try:
@@ -72,19 +68,16 @@ class BatchFlusher:
             self._send_batch(events)
 
     def shutdown(self) -> None:
-        """Gracefully stop the flusher, sending remaining events."""
         self._stop_event.set()
         self.flush()
         self._thread.join(timeout=10)
         self._http.close()
 
     def _run(self) -> None:
-        """Main flusher loop."""
         batch: list[RequestEvent] = []
         last_flush = time.time()
 
         while not self._stop_event.is_set():
-            # Collect events up to batch_size or flush_interval
             try:
                 timeout = max(0.1, self.config.flush_interval - (time.time() - last_flush))
                 event = self._queue.get(timeout=timeout)
@@ -103,7 +96,6 @@ class BatchFlusher:
                 last_flush = time.time()
 
     def _send_batch(self, events: list[RequestEvent]) -> None:
-        """Send a batch of events to the backend."""
         url = f"{self.config.backend_url}/ingest/batch"
         payload = {"events": [e.to_dict() for e in events]}
 
@@ -117,29 +109,36 @@ class BatchFlusher:
                     "X-SDK-Version": "0.1.0",
                 },
             )
-            if resp.status_code != 200 and self.config.debug:
-                print(f"[LLM Monitor] Backend returned {resp.status_code}: {resp.text}")
+            print(f"[LLM Monitor] Sent {len(events)} events -> {resp.status_code}: {resp.text}")
         except Exception as e:
-            if self.config.debug:
-                print(f"[LLM Monitor] Failed to send batch: {e}")
+            print(f"[LLM Monitor] Failed to send batch: {e}")
 
 
 class LLMMonitor:
     """
     Main monitor class. Wraps LLM API calls to capture observability data.
 
+    Supports: OpenAI, Anthropic, Groq, and any OpenAI-compatible provider.
+
     Usage:
         from llm_monitor import monitor
 
-        # Configure once at startup
         monitor.configure(api_key="lmd_xxx", project_id="proj_yyy")
 
-        # Use like the OpenAI client
+        # Works with any model — SDK auto-detects provider
         response = monitor.chat(model="gpt-4o", messages=[...])
+        response = monitor.chat(model="llama-3.3-70b-versatile", messages=[...])
+        response = monitor.chat(model="claude-3-5-sonnet-20241022", messages=[...])
 
-        # Or wrap an existing OpenAI client
+        # Or wrap your existing client
         client = monitor.wrap_openai(openai.OpenAI())
-        response = client.chat.completions.create(model="gpt-4o", messages=[...])
+        client = monitor.wrap_groq(Groq())
+        client = monitor.wrap_anthropic(anthropic.Anthropic())
+
+    Required env vars (whichever provider you use):
+        OPENAI_API_KEY=sk-...
+        ANTHROPIC_API_KEY=sk-ant-...
+        GROQ_API_KEY=gsk_...
     """
 
     def __init__(self, config: Optional[MonitorConfig] = None):
@@ -154,15 +153,6 @@ class LLMMonitor:
         backend_url: Optional[str] = None,
         **kwargs,
     ) -> "LLMMonitor":
-        """
-        Configure the monitor. Call this once at application startup.
-
-        Args:
-            api_key: Your LLM Monitor API key (lmd_xxx)
-            project_id: Your project UUID
-            backend_url: Override the backend URL (for self-hosting)
-            **kwargs: Additional MonitorConfig fields
-        """
         cfg_kwargs = {}
         if api_key:
             cfg_kwargs["api_key"] = api_key
@@ -198,38 +188,57 @@ class LLMMonitor:
         **kwargs,
     ) -> Any:
         """
-        Make a chat completion call with automatic monitoring.
-        Supports OpenAI and Anthropic models transparently.
+        Make a monitored chat completion call.
 
-        Args:
-            model: Model name (e.g. "gpt-4o", "claude-3-5-sonnet-20241022")
-            messages: List of message dicts [{"role": "user", "content": "..."}]
-            user_id: Optional end-user ID for tracking
-            session_id: Optional session/conversation ID
-            tags: Optional dict of custom tags
-            **kwargs: Additional args passed to the underlying API
-
-        Returns:
-            The raw API response (OpenAI or Anthropic format)
+        Auto-detects provider from model name:
+          gpt-*, o1, o3          → OpenAI    (OPENAI_API_KEY)
+          claude-*               → Anthropic (ANTHROPIC_API_KEY)
+          llama-*, mixtral-*, gemma-* → Groq (GROQ_API_KEY)
         """
         provider = get_provider(model)
-        if provider == "openai":
-            return self._openai_chat(model, messages, user_id=user_id,
-                                     session_id=session_id, tags=tags, **kwargs)
-        elif provider == "anthropic":
-            return self._anthropic_chat(model, messages, user_id=user_id,
-                                        session_id=session_id, tags=tags, **kwargs)
+
+        if provider == "anthropic":
+            return self._anthropic_chat(
+                model, messages,
+                user_id=user_id, session_id=session_id, tags=tags,
+                **kwargs,
+            )
+        elif provider == "groq":
+            return self._groq_chat(
+                model, messages,
+                user_id=user_id, session_id=session_id, tags=tags,
+                **kwargs,
+            )
         else:
-            raise ValueError(f"Unsupported provider for model '{model}'. "
-                             f"Use wrap_openai() or wrap_anthropic() for custom models.")
+            # Default: OpenAI + any OpenAI-compatible provider
+            return self._openai_chat(
+                model, messages,
+                user_id=user_id, session_id=session_id, tags=tags,
+                **kwargs,
+            )
+
+    # ─── Provider implementations ─────────────────────────────────────────────
 
     def _openai_chat(self, model: str, messages: list, **meta) -> Any:
         try:
             import openai
         except ImportError:
-            raise ImportError("openai package required: pip install openai")
+            raise ImportError("OpenAI package not found. Run: pip install openai")
 
-        client = openai.OpenAI()
+        client = openai.OpenAI()  # reads OPENAI_API_KEY from env
+        return self._run_openai_compatible(client, model, messages, **meta)
+
+    def _groq_chat(self, model: str, messages: list, **meta) -> Any:
+        try:
+            from groq import Groq
+        except ImportError:
+            raise ImportError("Groq package not found. Run: pip install groq")
+
+        client = Groq()  # reads GROQ_API_KEY from env
+        return self._run_openai_compatible(client, model, messages, **meta)
+
+    def _run_openai_compatible(self, client: Any, model: str, messages: list, **meta) -> Any:
+        """Shared logic for OpenAI-compatible clients (OpenAI, Groq, etc.)"""
         user_id = meta.pop("user_id", None)
         session_id = meta.pop("session_id", None)
         tags = meta.pop("tags", None)
@@ -278,15 +287,15 @@ class LLMMonitor:
         try:
             import anthropic
         except ImportError:
-            raise ImportError("anthropic package required: pip install anthropic")
+            raise ImportError("Anthropic package not found. Run: pip install anthropic")
 
-        client = anthropic.Anthropic()
+        client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
         user_id = meta.pop("user_id", None)
         session_id = meta.pop("session_id", None)
         tags = meta.pop("tags", None)
         max_tokens = meta.pop("max_tokens", 1024)
 
-        # Convert OpenAI-style messages to Anthropic format if needed
+        # Separate system message (Anthropic requires it outside messages array)
         system_msg = None
         filtered_messages = []
         for m in messages:
@@ -301,11 +310,15 @@ class LLMMonitor:
         status = "success"
 
         try:
-            kwargs: dict = {"model": model, "max_tokens": max_tokens,
-                            "messages": filtered_messages, **meta}
+            call_kwargs: dict = {
+                "model": model,
+                "max_tokens": max_tokens,
+                "messages": filtered_messages,
+                **meta,
+            }
             if system_msg:
-                kwargs["system"] = system_msg
-            response = client.messages.create(**kwargs)
+                call_kwargs["system"] = system_msg
+            response = client.messages.create(**call_kwargs)
         except Exception as e:
             status = "error"
             error_msg = str(e)
@@ -340,11 +353,15 @@ class LLMMonitor:
     # ─── Wrap existing clients ────────────────────────────────────────────────
 
     def wrap_openai(self, client: Any) -> "OpenAIWrapper":
-        """Wrap an existing OpenAI client for monitoring."""
+        """Wrap an existing OpenAI client."""
+        return OpenAIWrapper(client, self)
+
+    def wrap_groq(self, client: Any) -> "OpenAIWrapper":
+        """Wrap an existing Groq client (uses same OpenAI-compatible interface)."""
         return OpenAIWrapper(client, self)
 
     def wrap_anthropic(self, client: Any) -> "AnthropicWrapper":
-        """Wrap an existing Anthropic client for monitoring."""
+        """Wrap an existing Anthropic client."""
         return AnthropicWrapper(client, self)
 
     # ─── Internal recording ───────────────────────────────────────────────────
@@ -368,7 +385,6 @@ class LLMMonitor:
 
         cfg = self.config
 
-        # Extract prompt text
         prompt_text = None
         if cfg.capture_prompt and messages:
             last_user_msg = next(
@@ -378,20 +394,20 @@ class LLMMonitor:
             if last_user_msg:
                 prompt_text = str(last_user_msg)[:cfg.max_prompt_chars]
 
-        # Truncate response
         if response_text and cfg.capture_response:
             response_text = response_text[:cfg.max_response_chars]
         elif not cfg.capture_response:
             response_text = None
 
         cost = calculate_cost(model, prompt_tokens, completion_tokens)
+        provider = get_provider(model)
 
         event = RequestEvent(
             id=str(uuid.uuid4()),
             project_id=cfg.project_id,
             request_id=str(uuid.uuid4()),
             model=model,
-            provider=get_provider(model),
+            provider=provider,
             environment=os.environ.get("APP_ENV", "production"),
             prompt_text=prompt_text,
             response_text=response_text,
@@ -411,13 +427,15 @@ class LLMMonitor:
         self._flusher.enqueue(event)
 
         if cfg.debug:
+            cost_str = f"${cost:.6f}" if cost is not None else "N/A"
             print(
-                f"[LLM Monitor] Captured: model={model} tokens={prompt_tokens}+{completion_tokens} "
-                f"latency={latency_ms}ms cost=${cost:.6f}"
+                f"[LLM Monitor] Captured | model={model} provider={provider} "
+                f"tokens={prompt_tokens}+{completion_tokens} "
+                f"latency={latency_ms}ms cost={cost_str}"
             )
 
     def flush(self) -> None:
-        """Manually flush all queued events to the backend."""
+        """Manually flush queued events. Always call this in scripts."""
         if self._flusher:
             self._flusher.flush()
             if self._config and self._config.debug:
@@ -429,13 +447,10 @@ class LLMMonitor:
             self._flusher.shutdown()
 
 
-import os  # noqa: E402 (needed for os.environ in _record)
-
-
 # ─── Client wrappers ──────────────────────────────────────────────────────────
 
 class OpenAIWrapper:
-    """Transparent wrapper around an OpenAI client that adds monitoring."""
+    """Transparent wrapper for OpenAI and Groq clients."""
 
     def __init__(self, client: Any, monitor: LLMMonitor):
         self._client = client
@@ -492,7 +507,7 @@ class ChatCompletionsWrapper:
 
 
 class AnthropicWrapper:
-    """Transparent wrapper around an Anthropic client that adds monitoring."""
+    """Transparent wrapper around an Anthropic client."""
 
     def __init__(self, client: Any, monitor: LLMMonitor):
         self._client = client

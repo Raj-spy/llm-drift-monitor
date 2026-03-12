@@ -56,3 +56,5 @@ deployment/nginx/certs/*.key
 # Build artifacts
 sdk/dist/
 sdk/*.egg-info/
+
+.vercel

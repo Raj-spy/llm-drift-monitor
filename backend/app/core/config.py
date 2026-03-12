@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # ── LLM Providers (for drift evaluation) ─────────────────────────
     anthropic_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
+    groq_api_key: Optional[str] = None  # Groq — llama, mixtral, gemma models
 
     # ── Alerting ─────────────────────────────────────────────────────
     sendgrid_api_key: Optional[str] = None
@@ -33,7 +34,7 @@ class Settings(BaseSettings):
     enable_drift_scheduler: bool = True
     drift_scheduler_interval_hours: int = 24
 
-    # ── Stripe ───────────────────────────────────────────────────
+    # ── Stripe ───────────────────────────────────────────────────────
     stripe_secret_key: Optional[str] = None
     stripe_webhook_secret: Optional[str] = None
     stripe_starter_price_id: Optional[str] = None

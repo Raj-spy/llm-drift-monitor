@@ -31,7 +31,7 @@ class MonitorConfig:
 
     # Batching settings
     batch_size: int = 50           # Max events per batch
-    flush_interval: float = 5.0   # Seconds between auto-flushes
+    flush_interval: float = 0.5   # Seconds between auto-flushes
     max_queue_size: int = 1000    # Drop events if queue exceeds this
 
     # Content capture
