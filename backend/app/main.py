@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from .core.limiter import limiter
+from .api.alerts import router as alerts_router
 
 from .api.billing import router as billing_router
 from .api.dashboard import router as dashboard_router
@@ -110,6 +111,7 @@ def create_app() -> FastAPI:
     app.include_router(ingest_router, prefix="/v1")
     app.include_router(dashboard_router, prefix="/v1")
     app.include_router(billing_router, prefix="/v1")
+    app.include_router(alerts_router, prefix="/v1")
 
     # Health check
     @app.get("/health", response_model=HealthResponse, tags=["System"])
@@ -119,6 +121,8 @@ def create_app() -> FastAPI:
     @app.get("/", include_in_schema=False)
     async def root():
         return JSONResponse({"service": "LLM Drift Monitor API", "version": "0.1.0"})
+
+        
 
     return app
 

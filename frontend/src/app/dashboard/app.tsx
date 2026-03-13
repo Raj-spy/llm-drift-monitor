@@ -250,16 +250,50 @@ function Sidebar({ activeView, setActiveView, projects, currentProject, setCurre
 }
 
 // ── Overview ──────────────────────────────────────────────────────────────────
-function OverviewTab({ metrics, alerts, loading }: { metrics: MetricsResponse | null; alerts: Alert[]; loading: boolean }) {
+ function OverviewTab({ metrics, alerts, loading, onViewAlerts }: { 
+  metrics: MetricsResponse | null; alerts: Alert[]; loading: boolean;
+  onViewAlerts: () => void 
+}) {
   if (loading) return <Spinner />
   const s = metrics?.summary
   const trend = metrics?.daily_trend || []
   const models = metrics?.model_breakdown || []
   const dates = trend.map(d => d.date.slice(5))
   const activeAlerts = alerts.filter(a => a.status === 'active')
+  const criticalAlerts = activeAlerts.filter(a => a.severity === 'critical')
 
   return (
     <div className="space-y-5">
+
+      {/* Alert Banner */}
+      {activeAlerts.length > 0 && (
+        <div className={`flex items-center gap-3 p-4 rounded-xl border ${
+          criticalAlerts.length > 0
+            ? 'bg-red-50 border-red-200'
+            : 'bg-amber-50 border-amber-200'
+        }`}>
+          <AlertTriangle size={15} className={`flex-shrink-0 ${criticalAlerts.length > 0 ? 'text-red-500' : 'text-amber-500'}`} />
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm font-medium ${criticalAlerts.length > 0 ? 'text-red-700' : 'text-amber-700'}`}>
+              {criticalAlerts.length > 0
+                ? `${criticalAlerts.length} critical alert${criticalAlerts.length > 1 ? 's' : ''}`
+                : `${activeAlerts.length} active alert${activeAlerts.length > 1 ? 's' : ''}`}
+            </p>
+            <p className={`text-xs mt-0.5 truncate ${criticalAlerts.length > 0 ? 'text-red-500' : 'text-amber-600'}`}>
+              {activeAlerts[0].title}
+              {activeAlerts.length > 1 ? ` and ${activeAlerts.length - 1} more` : ''}
+            </p>
+          </div>
+          <button
+            onClick={onViewAlerts}
+            className={`text-xs font-medium whitespace-nowrap hover:underline ${
+              criticalAlerts.length > 0 ? 'text-red-600' : 'text-amber-700'
+            }`}>
+            View alerts →
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Total Requests" value={s?.total_requests} change={s?.requests_change_pct} icon={BarChart3} />
         <StatCard label="Total Cost" value={s?.total_cost_usd?.toFixed(6)} change={s?.cost_change_pct} icon={DollarSign} prefix="$" />
@@ -333,7 +367,11 @@ function OverviewTab({ metrics, alerts, loading }: { metrics: MetricsResponse | 
         <Card className={`p-5 ${models.length > 0 ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-medium text-[#0a0a0a]">Recent Alerts</h3>
-            {activeAlerts.length > 0 && <Badge variant="danger">{activeAlerts.length} active</Badge>}
+            {activeAlerts.length > 0 && (
+              <button onClick={onViewAlerts}>
+                <Badge variant="danger">{activeAlerts.length} active</Badge>
+              </button>
+            )}
           </div>
           {alerts.length === 0 ? (
             <Empty icon={Bell} title="No alerts yet" desc="Alerts appear when thresholds are breached." />
@@ -351,6 +389,11 @@ function OverviewTab({ metrics, alerts, loading }: { metrics: MetricsResponse | 
                   <span className="text-[11px] text-[#ccc] whitespace-nowrap">{timeAgo(a.triggered_at)}</span>
                 </div>
               ))}
+              {alerts.length > 4 && (
+                <button onClick={onViewAlerts} className="w-full text-xs text-[#999] hover:text-[#333] py-2 transition-colors">
+                  View all {alerts.length} alerts →
+                </button>
+              )}
             </div>
           )}
         </Card>
@@ -920,7 +963,14 @@ export default function App() {
 
         {/* Content */}
         <div className="p-7">
-          {activeView === 'overview'  && <OverviewTab metrics={metrics} alerts={alerts} loading={loading} />}
+          {activeView === 'overview' && (
+  <OverviewTab
+    metrics={metrics}
+    alerts={alerts}
+    loading={loading}
+    onViewAlerts={() => setActiveView('alerts')}
+  />
+)}
           {activeView === 'costs'     && <CostsTab metrics={metrics} loading={loading} />}
           {activeView === 'latency'   && <LatencyTab metrics={metrics} loading={loading} />}
           {activeView === 'models'    && <ModelsTab metrics={metrics} loading={loading} />}
