@@ -8,15 +8,33 @@ Supports both:
 
 import hashlib
 import secrets
+import time
 from typing import Optional, Dict
-from datetime import timezone, datetime, timedelta
 
 import jwt
-from fastapi import Depends, Header, HTTPException, Security, status, Request
+from fastapi import Depends, Header, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from ..core.supabase import get_supabase
 
 security = HTTPBearer(auto_error=False)
+
+# ───────────────────────────────────────────────────────────
+# API KEY CACHE
+# ───────────────────────────────────────────────────────────
+
+_api_key_cache: Dict[str, tuple] = {}
+CACHE_TTL = 300  # 5 minutes
+
+def _get_cached(key_hash: str):
+    if key_hash in _api_key_cache:
+        data, timestamp = _api_key_cache[key_hash]
+        if time.time() - timestamp < CACHE_TTL:
+            return data
+        del _api_key_cache[key_hash]  # Expired — remove
+    return None
+
+def _set_cache(key_hash: str, data: dict):
+    _api_key_cache[key_hash] = (data, time.time())
 
 # ───────────────────────────────────────────────────────────
 # API KEY UTILITIES
@@ -39,8 +57,9 @@ def generate_api_key() -> tuple[str, str, str]:
     key_prefix = full_key[:12]
     return full_key, key_hash, key_prefix
 
+
 # ───────────────────────────────────────────────────────────
-# API KEY AUTH (SDK ingestion) - FIXED
+# API KEY AUTH (SDK ingestion)
 # ───────────────────────────────────────────────────────────
 
 async def get_current_project_from_api_key(
@@ -52,7 +71,7 @@ async def get_current_project_from_api_key(
     Expected format:
     Authorization: Bearer lmd_xxxxx
     """
-    
+
     if not authorization or not authorization.startswith("Bearer lmd_"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -62,9 +81,14 @@ async def get_current_project_from_api_key(
     api_key = authorization.replace("Bearer ", "")
     key_hash = _hash_api_key(api_key)
 
+    # ── Cache check — skip Supabase if recently verified ─────────────
+    cached = _get_cached(key_hash)
+    if cached:
+        return cached
+
     supabase = get_supabase()
 
-    # Lookup api key - FIXED: Handle None result from HTTP 406
+    # Lookup api key
     result = (
         supabase.table("api_keys")
         .select("id, project_id, owner_id, is_active")
@@ -74,7 +98,6 @@ async def get_current_project_from_api_key(
         .execute()
     )
 
-    # ✅ FIXED: Safe null check
     if result is None or not hasattr(result, 'data') or not result.data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -83,7 +106,7 @@ async def get_current_project_from_api_key(
 
     api_key_record = result.data
 
-    # Fetch project - ALSO FIXED
+    # Fetch project
     project_result = (
         supabase.table("projects")
         .select("*")
@@ -92,21 +115,26 @@ async def get_current_project_from_api_key(
         .execute()
     )
 
-    # ✅ FIXED: Safe null check for project
     if project_result is None or not hasattr(project_result, 'data') or not project_result.data:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Project not found"
         )
 
-    return {
+    auth_data = {
         "project": project_result.data,
         "owner_id": api_key_record["owner_id"],
         "api_key_id": api_key_record["id"],
     }
 
+    # ── Cache store — next 5 min Supabase call nahi hogi ─────────────
+    _set_cache(key_hash, auth_data)
+
+    return auth_data
+
+
 # ───────────────────────────────────────────────────────────
-# JWT AUTH (Dashboard users) - ALSO FIXED
+# JWT AUTH (Dashboard users)
 # ───────────────────────────────────────────────────────────
 
 async def get_current_user_from_jwt(
@@ -114,10 +142,8 @@ async def get_current_user_from_jwt(
 ) -> Dict:
     """
     Validate dashboard user using JWT token.
-
-    Supports Clerk / Supabase tokens.
     """
-    
+
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -127,7 +153,6 @@ async def get_current_user_from_jwt(
     token = credentials.credentials
 
     try:
-        # Decode JWT without verifying signature (Supabase handles this)
         payload = jwt.decode(token, options={"verify_signature": False})
         user_id = payload.get("sub")
         if not user_id:
@@ -148,7 +173,6 @@ async def get_current_user_from_jwt(
         .execute()
     )
 
-    # ✅ FIXED: Safe null check
     if user_result is None or not hasattr(user_result, 'data') or not user_result.data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -157,8 +181,9 @@ async def get_current_user_from_jwt(
 
     return user_result.data
 
+
 # ───────────────────────────────────────────────────────────
-# PROJECT ACCESS VALIDATION - FIXED
+# PROJECT ACCESS VALIDATION
 # ───────────────────────────────────────────────────────────
 
 async def verify_project_access(
@@ -166,7 +191,7 @@ async def verify_project_access(
     current_user: Dict = Depends(get_current_user_from_jwt),
 ) -> Dict:
     """Verify that user owns project."""
-    
+
     supabase = get_supabase()
 
     result = (
@@ -178,7 +203,6 @@ async def verify_project_access(
         .execute()
     )
 
-    # ✅ FIXED: Safe null check
     if result is None or not hasattr(result, 'data') or not result.data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -187,17 +211,17 @@ async def verify_project_access(
 
     return result.data
 
+
 # ───────────────────────────────────────────────────────────
 # USAGE LIMIT CHECK
 # ───────────────────────────────────────────────────────────
 
 def check_usage_limit(user: Dict) -> None:
     """Raise 429 if monthly usage exceeded."""
-    
-    # Safe check for required fields
+
     requests_this_month = user.get("requests_this_month", 0)
     monthly_limit = user.get("monthly_request_limit", float('inf'))
-    
+
     if requests_this_month >= monthly_limit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

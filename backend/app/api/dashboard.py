@@ -184,6 +184,7 @@ async def get_metrics(
     )
     if model:
         q = q.eq("model", model)
+        q = q.limit(10000)
     rows = q.execute().data or []
 
     prev_rows = (

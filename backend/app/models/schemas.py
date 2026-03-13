@@ -39,7 +39,7 @@ class IngestEvent(BaseModel):
 
 
 class IngestBatchRequest(BaseModel):
-    events: list[IngestEvent] = Field(..., max_length=500)
+    events: list[IngestEvent] = Field(..., max_length=10000)
 
 
 class IngestResponse(BaseModel):
