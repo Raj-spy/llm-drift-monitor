@@ -8,11 +8,14 @@ import { projectsApi, apiKeysApi } from '@/lib/api'
 
 const STEPS = ['Create Project', 'Save API Key', 'Install SDK', 'Done!']
 
+type Stack = 'python' | 'nodejs' | 'api'
+
 export default function OnboardingPage() {
   const [step, setStep] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState<string | null>(null)
+  const [stack, setStack] = useState<Stack>('python')
 
   const [projectName, setProjectName] = useState('')
   const [environment, setEnvironment] = useState('production')
@@ -47,10 +50,10 @@ export default function OnboardingPage() {
     }
   }
 
-  const installSnippet = `pip install llm-monitor groq python-dotenv`
+const pythonInstall = `pip install llm-monitor python-dotenv`
 
-const configSnippet = `from dotenv import load_dotenv
-load_dotenv()  # .env file se GROQ_API_KEY / OPENAI_API_KEY padho
+const pythonSnippet = `from dotenv import load_dotenv
+load_dotenv()
 
 from llm_monitor import monitor
 
@@ -62,10 +65,81 @@ monitor.configure(
 
 response = monitor.chat(
     model="${model || 'llama-3.3-70b-versatile'}",
-    messages=[{"role": "user", "content": "Your message here"}],
+    messages=[{"role": "user", "content": "Hello!"}],
 )
 monitor.flush()
 print(response.choices[0].message.content)`
+
+//  node js sdk 
+
+const nodeInstall = `npm install axios`
+
+const nodeSnippet = `const axios = require('axios');
+
+async function trackLLM(model, response, latencyMs) {
+  const { prompt_tokens = 0, completion_tokens = 0, total_tokens = 0 } = response.usage ?? {};
+  await axios.post(
+    'https://innovative-learning-production-7c85.up.railway.app/v1/ingest/batch',
+    { events: [{
+      id: crypto.randomUUID(),
+      project_id: '${projectId || 'your-project-id'}',
+      model, provider: 'groq', environment: 'production',
+      prompt_tokens, completion_tokens, total_tokens,
+      latency_ms: latencyMs, cost_usd: 0, status: 'success',
+      requested_at: new Date().toISOString(),
+      request_id: crypto.randomUUID(),
+      tags: {}, user_id: null, session_id: null,
+      prompt_text: null, response_text: null, error_message: null,
+    }]},
+    { headers: { Authorization: 'Bearer ${apiKey || 'lmd_your_key_here'}' } }
+  ).catch(() => {});
+}
+
+// Usage — add after every LLM call:
+const start = Date.now();
+const response = await groq.chat.completions.create({
+  model: '${model || 'llama-3.3-70b-versatile'}',
+  messages: [{ role: 'user', content: 'Hello!' }],
+});
+trackLLM('${model || 'llama-3.3-70b-versatile'}', response, Date.now() - start);`
+
+const apiSnippet = `import httpx, time, uuid
+
+start = time.time()
+# response = your_llm_call(...)
+latency_ms = int((time.time() - start) * 1000)
+
+httpx.post(
+    "https://innovative-learning-production-7c85.up.railway.app/v1/ingest/batch",
+    json={"events": [{
+        "id": str(uuid.uuid4()),
+        "project_id": "${projectId || 'your-project-id'}",
+        "model": "${model || 'llama-3.3-70b-versatile'}",
+        "provider": "groq",
+        "environment": "production",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "latency_ms": latency_ms,
+        "cost_usd": 0,
+        "status": "success",
+        "requested_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "request_id": str(uuid.uuid4()),
+        "tags": {}, "user_id": None, "session_id": None,
+        "prompt_text": None, "response_text": None, "error_message": None,
+    }]},
+    headers={"Authorization": "Bearer ${apiKey || 'lmd_your_key_here'}"},
+    timeout=5,
+)`
+
+  const stackConfig = {
+    python: { install: pythonInstall, snippet: pythonSnippet, installId: 'py-install', snippetId: 'py-snippet' },
+    nodejs: { install: nodeInstall, snippet: nodeSnippet, installId: 'node-install', snippetId: 'node-snippet' },
+    api: { install: null, snippet: apiSnippet, installId: null, snippetId: 'api-snippet' },
+  }
+
+  const current = stackConfig[stack]
+
   return (
     <>
       <style>{`
@@ -83,9 +157,8 @@ print(response.choices[0].message.content)`
           -webkit-font-smoothing: antialiased;
         }
 
-        .ob-wrap { width: 100%; max-width: 480px; }
+        .ob-wrap { width: 100%; max-width: 540px; }
 
-        /* Logo */
         .ob-logo {
           display: flex;
           align-items: center;
@@ -100,7 +173,6 @@ print(response.choices[0].message.content)`
           letter-spacing: -0.01em;
         }
 
-        /* Steps */
         .ob-steps {
           display: flex;
           align-items: flex-start;
@@ -151,7 +223,6 @@ print(response.choices[0].message.content)`
         }
         .ob-step-line.done { background: #0a0a0a; }
 
-        /* Card */
         .ob-card {
           background: #fff;
           border: 1px solid #e4e4e7;
@@ -174,7 +245,6 @@ print(response.choices[0].message.content)`
           line-height: 1.5;
         }
 
-        /* Error */
         .ob-error {
           margin-bottom: 16px;
           padding: 10px 13px;
@@ -185,7 +255,6 @@ print(response.choices[0].message.content)`
           color: #dc2626;
         }
 
-        /* Fields */
         .ob-field { margin-bottom: 14px; }
         .ob-label {
           display: block;
@@ -236,7 +305,6 @@ print(response.choices[0].message.content)`
           box-shadow: 0 0 0 3px rgba(10,10,10,0.06);
         }
 
-        /* Button */
         .ob-btn {
           width: 100%;
           height: 36px;
@@ -260,7 +328,6 @@ print(response.choices[0].message.content)`
         .ob-btn:hover { background: #222; }
         .ob-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        /* Warning */
         .ob-warn {
           background: #fffbeb;
           border: 1px solid #fde68a;
@@ -274,7 +341,6 @@ print(response.choices[0].message.content)`
         .ob-warn-icon { flex-shrink: 0; color: #d97706; margin-top: 1px; }
         .ob-warn-text { font-size: 12px; color: #92400e; line-height: 1.5; }
 
-        /* API key block */
         .ob-key-block {
           background: #fafafa;
           border: 1px solid #e4e4e7;
@@ -311,7 +377,6 @@ print(response.choices[0].message.content)`
         }
         .ob-copy-btn:hover { background: #f4f4f5; color: #0a0a0a; border-color: #d4d4d8; }
 
-        /* Meta */
         .ob-meta-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
@@ -332,10 +397,8 @@ print(response.choices[0].message.content)`
           color: #3f3f46;
         }
 
-        /* Divider */
         .ob-divider { height: 1px; background: #f4f4f5; margin: 18px 0; }
 
-        /* SDK section label */
         .ob-section-label {
           font-size: 11.5px;
           font-weight: 600;
@@ -345,7 +408,50 @@ print(response.choices[0].message.content)`
           margin-bottom: 8px;
         }
 
-        /* Code block */
+        /* Stack tabs */
+        .ob-tabs {
+          display: flex;
+          gap: 6px;
+          margin-bottom: 20px;
+          background: #f4f4f5;
+          padding: 4px;
+          border-radius: 8px;
+        }
+        .ob-tab {
+          flex: 1;
+          height: 30px;
+          border: none;
+          border-radius: 6px;
+          font-size: 12px;
+          font-weight: 500;
+          font-family: inherit;
+          cursor: pointer;
+          transition: all 0.15s;
+          background: transparent;
+          color: #71717a;
+        }
+        .ob-tab.active {
+          background: #fff;
+          color: #0a0a0a;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .ob-tab:hover:not(.active) { color: #3f3f46; }
+
+        /* File location badge */
+        .ob-file-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          background: #f0fdf4;
+          border: 1px solid #bbf7d0;
+          border-radius: 6px;
+          padding: 5px 10px;
+          font-size: 11.5px;
+          color: #15803d;
+          font-family: 'SF Mono', 'Fira Mono', monospace;
+          margin-bottom: 10px;
+        }
+
         .ob-code-wrap {
           position: relative;
           background: #fafafa;
@@ -356,7 +462,7 @@ print(response.choices[0].message.content)`
         }
         .ob-code {
           font-family: 'SF Mono', 'Fira Mono', 'Cascadia Code', monospace;
-          font-size: 12px;
+          font-size: 11.5px;
           color: #3f3f46;
           white-space: pre;
           overflow-x: auto;
@@ -381,7 +487,6 @@ print(response.choices[0].message.content)`
         }
         .ob-code-copy:hover { background: #f4f4f5; color: #0a0a0a; }
 
-        /* Note */
         .ob-note {
           background: #f0f9ff;
           border: 1px solid #bae6fd;
@@ -390,7 +495,7 @@ print(response.choices[0].message.content)`
           font-size: 12px;
           color: #0369a1;
           line-height: 1.6;
-          margin-bottom: 18px;
+          margin-bottom: 14px;
         }
         .ob-note code {
           font-family: 'SF Mono', 'Fira Mono', monospace;
@@ -400,14 +505,6 @@ print(response.choices[0].message.content)`
           font-size: 11.5px;
         }
 
-        .ob-caption {
-          font-size: 12px;
-          color: #a1a1aa;
-          line-height: 1.6;
-          margin-bottom: 18px;
-        }
-
-        /* Success */
         .ob-success-center { text-align: center; }
         .ob-check-circle {
           width: 52px;
@@ -429,6 +526,17 @@ print(response.choices[0].message.content)`
           transition: color 0.15s;
         }
         .ob-docs-link:hover { color: #0a0a0a; }
+
+        .ob-step-desc {
+          font-size: 12px;
+          color: #71717a;
+          margin-bottom: 12px;
+          line-height: 1.6;
+          padding: 8px 12px;
+          background: #fafafa;
+          border-radius: 7px;
+          border-left: 3px solid #e4e4e7;
+        }
       `}</style>
 
       <div className="ob-root">
@@ -462,7 +570,6 @@ print(response.choices[0].message.content)`
             ))}
           </div>
 
-          {/* Card */}
           <div className="ob-card">
 
             {/* ── Step 0: Create Project ── */}
@@ -572,40 +679,109 @@ print(response.choices[0].message.content)`
             {/* ── Step 2: Install SDK ── */}
             {step === 2 && (
               <div>
-                <div className="ob-title">Install the SDK</div>
-                <div className="ob-subtitle">Two steps — under 2 minutes.</div>
+                <div className="ob-title">Add to your project</div>
+                <div className="ob-subtitle">Select your stack — we'll show you exactly where to add the code.</div>
 
-                {/* Install */}
-                <div className="ob-section-label">1 — Install</div>
-                <div className="ob-code-wrap">
-                  <pre className="ob-code">{installSnippet}</pre>
-                  <button className="ob-code-copy" onClick={() => copy(installSnippet, 'install')}>
-                    {copied === 'install'
-                      ? <><Check size={11} color="#16a34a" /> Copied</>
-                      : <><Copy size={11} /> Copy</>}
+                {/* Stack tabs */}
+                <div className="ob-tabs">
+                  <button className={`ob-tab ${stack === 'python' ? 'active' : ''}`} onClick={() => setStack('python')}>
+                    🐍 Python
+                  </button>
+                  <button className={`ob-tab ${stack === 'nodejs' ? 'active' : ''}`} onClick={() => setStack('nodejs')}>
+                    🟢 Node.js
+                  </button>
+                  <button className={`ob-tab ${stack === 'api' ? 'active' : ''}`} onClick={() => setStack('api')}>
+                    🔌 Direct API
                   </button>
                 </div>
 
-                {/* Configure */}
-                <div className="ob-section-label">2 — Add to your code</div>
-                <div className="ob-code-wrap">
-                  <pre className="ob-code">{configSnippet}</pre>
-                  <button className="ob-code-copy" onClick={() => copy(configSnippet, 'config')}>
-                    {copied === 'config'
-                      ? <><Check size={11} color="#16a34a" /> Copied</>
-                      : <><Copy size={11} /> Copy</>}
-                  </button>
-                </div>
+                {/* Python */}
+                {stack === 'python' && (
+                  <>
+                    <div className="ob-step-desc">
+                      Open the file where your LLM calls happen — e.g. <code style={{fontFamily:'monospace'}}>main.py</code>, <code style={{fontFamily:'monospace'}}>app.py</code>, <code style={{fontFamily:'monospace'}}>services/ai.py</code>, or <code style={{fontFamily:'monospace'}}>routes/chat.py</code>. Add the code below at the top of that file.
+                    </div>
 
-                {/* Important note about provider key */}
-                <div className="ob-note">
-                  💡 The SDK automatically reads <code>OPENAI_API_KEY</code> or <code>ANTHROPIC_API_KEY</code> from your environment — no extra setup needed if you're already using these models.
-                </div>
+                    <div className="ob-section-label">1 — Install</div>
+                    <div className="ob-code-wrap">
+                      <pre className="ob-code">{current.install}</pre>
+                      <button className="ob-code-copy" onClick={() => copy(current.install!, current.installId!)}>
+                        {copied === current.installId ? <><Check size={11} color="#16a34a" /> Copied</> : <><Copy size={11} /> Copy</>}
+                      </button>
+                    </div>
 
-                <div className="ob-note">
-  💡 Make sure your provider API key is set in <code>.env</code> file:<br/>
-  <code>GROQ_API_KEY=gsk_...</code> or <code>OPENAI_API_KEY=sk-...</code>
-</div>
+                    <div className="ob-section-label">2 — Add to your LLM file</div>
+                    <div className="ob-file-badge">
+                      📁 your-project/main.py  (or wherever your LLM calls are)
+                    </div>
+                    <div className="ob-code-wrap">
+                      <pre className="ob-code">{current.snippet}</pre>
+                      <button className="ob-code-copy" onClick={() => copy(current.snippet, current.snippetId)}>
+                        {copied === current.snippetId ? <><Check size={11} color="#16a34a" /> Copied</> : <><Copy size={11} /> Copy</>}
+                      </button>
+                    </div>
+
+                    <div className="ob-note">
+                      💡 Make sure your <code>.env</code> file has: <code>GROQ_API_KEY=gsk_...</code> or <code>OPENAI_API_KEY=sk-...</code>
+                    </div>
+                  </>
+                )}
+
+                {/* Node.js */}
+                {stack === 'nodejs' && (
+                  <>
+                    <div className="ob-step-desc">
+                      Open the file where you call Groq/OpenAI — e.g. <code style={{fontFamily:'monospace'}}>groq.js</code>, <code style={{fontFamily:'monospace'}}>openai.js</code>, <code style={{fontFamily:'monospace'}}>services/ai.js</code>, or <code style={{fontFamily:'monospace'}}>utils/llm.js</code>. Add the <code style={{fontFamily:'monospace'}}>trackLLM()</code> helper and call it after every LLM response.
+                    </div>
+
+                    <div className="ob-section-label">1 — Install</div>
+                    <div className="ob-code-wrap">
+                      <pre className="ob-code">{current.install}</pre>
+                      <button className="ob-code-copy" onClick={() => copy(current.install!, current.installId!)}>
+                        {copied === current.installId ? <><Check size={11} color="#16a34a" /> Copied</> : <><Copy size={11} /> Copy</>}
+                      </button>
+                    </div>
+
+                    <div className="ob-section-label">2 — Add to your LLM file</div>
+                    <div className="ob-file-badge">
+                      📁 your-project/services/ai.js  (or wherever your LLM calls are)
+                    </div>
+                    <div className="ob-code-wrap">
+                      <pre className="ob-code">{current.snippet}</pre>
+                      <button className="ob-code-copy" onClick={() => copy(current.snippet, current.snippetId)}>
+                        {copied === current.snippetId ? <><Check size={11} color="#16a34a" /> Copied</> : <><Copy size={11} /> Copy</>}
+                      </button>
+                    </div>
+
+                    <div className="ob-note">
+                      💡 Just add <code>trackLLM(model, response, latencyMs)</code> after every existing LLM call — no other changes needed.
+                    </div>
+                  </>
+                )}
+
+                {/* Direct API */}
+                {stack === 'api' && (
+                  <>
+                    <div className="ob-step-desc">
+                      Works with any language — Ruby, Go, PHP, curl, etc. After your LLM call completes, send a POST request to our ingest endpoint with the response data.
+                    </div>
+
+                    <div className="ob-section-label">Add after your LLM call</div>
+                    <div className="ob-file-badge">
+                      📁 any file in any language — just HTTP POST
+                    </div>
+                    <div className="ob-code-wrap">
+                      <pre className="ob-code">{current.snippet}</pre>
+                      <button className="ob-code-copy" onClick={() => copy(current.snippet, current.snippetId)}>
+                        {copied === current.snippetId ? <><Check size={11} color="#16a34a" /> Copied</> : <><Copy size={11} /> Copy</>}
+                      </button>
+                    </div>
+
+                    <div className="ob-note">
+                      💡 Set <code>provider</code> to <code>groq</code>, <code>openai</code>, or <code>anthropic</code> — and fill in token counts from <code>response.usage</code>.
+                    </div>
+                  </>
+                )}
 
                 <button className="ob-btn" onClick={() => setStep(3)}>
                   Done, let's go! <ArrowRight size={14} />
