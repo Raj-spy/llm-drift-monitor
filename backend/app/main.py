@@ -11,7 +11,6 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from .core.limiter import limiter
 from .api.alerts import router as alerts_router
-
 from .api.billing import router as billing_router
 from .api.dashboard import router as dashboard_router
 from .api.ingest import router as ingest_router
@@ -25,45 +24,44 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     settings = get_settings()
     logger.info(f"Starting LLM Drift Monitor API [{settings.app_env}]")
 
-    # Start background scheduler for drift tests and metric aggregation
     if settings.enable_drift_scheduler:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
-        from .services.cost_service import CostAggregator
+        from .services.cost_service import CostAggregator, CostSpikeDetector
         from .services.drift_service import DriftDetectionService
 
         scheduler = AsyncIOScheduler()
 
-        # Nightly metric aggregation at 01:00 UTC
+        # 01:00 UTC — nightly metric aggregation
         scheduler.add_job(
             CostAggregator().aggregate_all_projects_yesterday,
-            "cron",
-            hour=1,
-            minute=0,
+            "cron", hour=1, minute=0,
             id="nightly_metric_aggregation",
         )
 
-        # Daily drift tests at 06:00 UTC
+        # 02:00 UTC — spike detection (after aggregation)
+        scheduler.add_job(
+            lambda: CostSpikeDetector().check_all_projects(),
+            "cron", hour=2, minute=0,
+            id="daily_spike_check",
+        )
+
+        # 06:00 UTC — daily drift tests
         scheduler.add_job(
             lambda: DriftDetectionService().run_all_scheduled_tests("daily"),
-            "cron",
-            hour=6,
-            minute=0,
+            "cron", hour=6, minute=0,
             id="daily_drift_tests",
         )
 
-        # Hourly drift tests every hour
+        # Every hour — hourly drift tests
         scheduler.add_job(
             lambda: DriftDetectionService().run_all_scheduled_tests("hourly"),
-            "cron",
-            minute=5,
+            "cron", minute=5,
             id="hourly_drift_tests",
         )
 
@@ -73,7 +71,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
     if hasattr(app.state, "scheduler"):
         app.state.scheduler.shutdown(wait=False)
     logger.info("LLM Drift Monitor API shutting down")
@@ -94,11 +91,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Rate limiter setup
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-    # CORS
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.backend_cors_origins,
@@ -107,13 +102,11 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Routes
     app.include_router(ingest_router, prefix="/v1")
     app.include_router(dashboard_router, prefix="/v1")
     app.include_router(billing_router, prefix="/v1")
     app.include_router(alerts_router, prefix="/v1")
 
-    # Health check
     @app.get("/health", response_model=HealthResponse, tags=["System"])
     async def health():
         return HealthResponse(environment=settings.app_env)
@@ -121,8 +114,6 @@ def create_app() -> FastAPI:
     @app.get("/", include_in_schema=False)
     async def root():
         return JSONResponse({"service": "LLM Drift Monitor API", "version": "0.1.0"})
-
-        
 
     return app
 

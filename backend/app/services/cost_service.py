@@ -259,3 +259,47 @@ class CostSpikeDetector:
                 })
 
         return alerts
+
+    def check_all_projects(self) -> None:
+        """Check all active projects for spikes. Called by scheduler."""
+        from .alert_service import AlertService
+        alert_service = AlertService()
+
+        projects = self.supabase.table("projects").select("id").eq("is_active", True).execute()
+
+        for project in projects.data or []:
+            try:
+                alerts = self.check_project(project["id"])
+                for alert in alerts:
+                    # Duplicate check — same type aaj already fired?
+                    existing = (
+                        self.supabase.table("alerts")
+                        .select("id")
+                        .eq("project_id", project["id"])
+                        .eq("alert_type", alert["alert_type"])
+                        .eq("status", "active")
+                        .gte("triggered_at", date.today().isoformat())
+                        .execute()
+                    )
+                    if existing.data:
+                        continue
+
+                    if alert["alert_type"] == "cost_spike":
+                        alert_service.create_cost_alert(
+                            project_id=alert["project_id"],
+                            model=None,
+                            metric_value=alert["metric_value"],
+                            threshold_value=alert["threshold_value"],
+                            percentage_change=alert["percentage_change"],
+                        )
+                    elif alert["alert_type"] == "latency_spike":
+                        alert_service.create_latency_alert(
+                            project_id=alert["project_id"],
+                            model=None,
+                            metric_value=alert["metric_value"],
+                            threshold_value=alert["threshold_value"],
+                            percentage_change=alert["percentage_change"],
+                        )
+                    logger.info(f"Alert fired: {alert['alert_type']} for project {project['id']}")
+            except Exception as e:
+                logger.error(f"Spike check failed for {project['id']}: {e}")
