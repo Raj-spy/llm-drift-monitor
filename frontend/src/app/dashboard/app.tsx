@@ -21,7 +21,6 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend, Filler)
 
-// ── Chart defaults ────────────────────────────────────────────────────────────
 const chart = {
   responsive: true, maintainAspectRatio: false,
   plugins: {
@@ -38,7 +37,6 @@ const chart = {
   },
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime()
   const h = Math.floor(diff / 3_600_000)
@@ -51,7 +49,6 @@ function fmt(n: number, decimals = 2) {
   return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
 
-// ── Primitives ────────────────────────────────────────────────────────────────
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-24">
@@ -108,7 +105,6 @@ function CopyBtn({ text }: { text: string }) {
   )
 }
 
-// ── Stat Card ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, change, icon: Icon, prefix = '', suffix = '' }: {
   label: string; value?: string | number; change?: number
   icon: any; prefix?: string; suffix?: string
@@ -139,7 +135,6 @@ function StatCard({ label, value, change, icon: Icon, prefix = '', suffix = '' }
   )
 }
 
-// ── Sidebar ───────────────────────────────────────────────────────────────────
 function Sidebar({ activeView, setActiveView, projects, currentProject, setCurrentProject, alertCount }: {
   activeView: string; setActiveView: (v: string) => void
   projects: Project[]; currentProject: Project | null
@@ -161,7 +156,6 @@ function Sidebar({ activeView, setActiveView, projects, currentProject, setCurre
 
   return (
     <aside className="w-56 bg-white border-r border-black/[0.06] flex flex-col h-screen sticky top-0 flex-shrink-0">
-      {/* Logo */}
       <div className="px-5 pt-5 pb-4 border-b border-black/[0.05]">
         <div className="flex items-center gap-2.5">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -180,7 +174,6 @@ function Sidebar({ activeView, setActiveView, projects, currentProject, setCurre
         </div>
       </div>
 
-      {/* Project switcher */}
       <div className="px-3 py-2.5 border-b border-black/[0.05] relative">
         <button onClick={() => setOpen(!open)}
           className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-black/[0.03] transition-colors group">
@@ -212,7 +205,6 @@ function Sidebar({ activeView, setActiveView, projects, currentProject, setCurre
         )}
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 px-3 py-2 space-y-0.5 overflow-y-auto">
         {nav.map(({ id, icon: Icon, label, badge }) => (
           <button key={id} onClick={() => setActiveView(id)}
@@ -234,7 +226,6 @@ function Sidebar({ activeView, setActiveView, projects, currentProject, setCurre
         ))}
       </nav>
 
-      {/* Footer */}
       <div className="px-3 py-3 border-t border-black/[0.05] space-y-1">
         <div className="px-2.5 py-2 rounded-lg bg-[#fafafa] border border-black/[0.05]">
           <p className="text-[10px] font-medium text-[#999] uppercase tracking-wide mb-0.5">Starter Plan</p>
@@ -249,10 +240,9 @@ function Sidebar({ activeView, setActiveView, projects, currentProject, setCurre
   )
 }
 
-// ── Overview ──────────────────────────────────────────────────────────────────
- function OverviewTab({ metrics, alerts, loading, onViewAlerts }: { 
-  metrics: MetricsResponse | null; alerts: Alert[]; loading: boolean;
-  onViewAlerts: () => void 
+function OverviewTab({ metrics, alerts, loading, onViewAlerts }: {
+  metrics: MetricsResponse | null; alerts: Alert[]; loading: boolean
+  onViewAlerts: () => void
 }) {
   if (loading) return <Spinner />
   const s = metrics?.summary
@@ -264,13 +254,9 @@ function Sidebar({ activeView, setActiveView, projects, currentProject, setCurre
 
   return (
     <div className="space-y-5">
-
-      {/* Alert Banner */}
       {activeAlerts.length > 0 && (
         <div className={`flex items-center gap-3 p-4 rounded-xl border ${
-          criticalAlerts.length > 0
-            ? 'bg-red-50 border-red-200'
-            : 'bg-amber-50 border-amber-200'
+          criticalAlerts.length > 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'
         }`}>
           <AlertTriangle size={15} className={`flex-shrink-0 ${criticalAlerts.length > 0 ? 'text-red-500' : 'text-amber-500'}`} />
           <div className="flex-1 min-w-0">
@@ -280,15 +266,11 @@ function Sidebar({ activeView, setActiveView, projects, currentProject, setCurre
                 : `${activeAlerts.length} active alert${activeAlerts.length > 1 ? 's' : ''}`}
             </p>
             <p className={`text-xs mt-0.5 truncate ${criticalAlerts.length > 0 ? 'text-red-500' : 'text-amber-600'}`}>
-              {activeAlerts[0].title}
-              {activeAlerts.length > 1 ? ` and ${activeAlerts.length - 1} more` : ''}
+              {activeAlerts[0].title}{activeAlerts.length > 1 ? ` and ${activeAlerts.length - 1} more` : ''}
             </p>
           </div>
-          <button
-            onClick={onViewAlerts}
-            className={`text-xs font-medium whitespace-nowrap hover:underline ${
-              criticalAlerts.length > 0 ? 'text-red-600' : 'text-amber-700'
-            }`}>
+          <button onClick={onViewAlerts}
+            className={`text-xs font-medium whitespace-nowrap hover:underline ${criticalAlerts.length > 0 ? 'text-red-600' : 'text-amber-700'}`}>
             View alerts →
           </button>
         </div>
@@ -320,7 +302,6 @@ function Sidebar({ activeView, setActiveView, projects, currentProject, setCurre
               }} options={chart as any} />
             </div>
           </Card>
-
           <Card className="p-5">
             <div className="flex items-center justify-between mb-5">
               <div>
@@ -363,7 +344,6 @@ function Sidebar({ activeView, setActiveView, projects, currentProject, setCurre
             </div>
           </Card>
         )}
-
         <Card className={`p-5 ${models.length > 0 ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-medium text-[#0a0a0a]">Recent Alerts</h3>
@@ -402,7 +382,6 @@ function Sidebar({ activeView, setActiveView, projects, currentProject, setCurre
   )
 }
 
-// ── Costs ─────────────────────────────────────────────────────────────────────
 function CostsTab({ metrics, loading }: { metrics: MetricsResponse | null; loading: boolean }) {
   if (loading) return <Spinner />
   const trend = metrics?.daily_trend || []
@@ -428,7 +407,6 @@ function CostsTab({ metrics, loading }: { metrics: MetricsResponse | null; loadi
           </Card>
         ))}
       </div>
-
       <Card className="p-5">
         <h3 className="text-sm font-medium text-[#0a0a0a] mb-5">30-Day Cost Trend</h3>
         <div style={{ height: 260 }}>
@@ -438,7 +416,6 @@ function CostsTab({ metrics, loading }: { metrics: MetricsResponse | null; loadi
           }} options={{ ...chart, scales: { ...chart.scales, y: { ...chart.scales.y, ticks: { ...chart.scales.y.ticks, callback: (v: any) => `$${Number(v).toFixed(4)}` } } } } as any} />
         </div>
       </Card>
-
       <Card className="overflow-hidden">
         <div className="px-5 py-4 border-b border-black/[0.05]">
           <h3 className="text-sm font-medium text-[#0a0a0a]">Daily Breakdown</h3>
@@ -459,7 +436,6 @@ function CostsTab({ metrics, loading }: { metrics: MetricsResponse | null; loadi
   )
 }
 
-// ── Latency ───────────────────────────────────────────────────────────────────
 function LatencyTab({ metrics, loading }: { metrics: MetricsResponse | null; loading: boolean }) {
   if (loading) return <Spinner />
   const trend = metrics?.daily_trend || []
@@ -481,7 +457,6 @@ function LatencyTab({ metrics, loading }: { metrics: MetricsResponse | null; loa
           </Card>
         ))}
       </div>
-
       <Card className="p-5">
         <h3 className="text-sm font-medium text-[#0a0a0a] mb-5">Average Latency</h3>
         <div style={{ height: 260 }}>
@@ -495,7 +470,6 @@ function LatencyTab({ metrics, loading }: { metrics: MetricsResponse | null; loa
   )
 }
 
-// ── Models ────────────────────────────────────────────────────────────────────
 function ModelsTab({ metrics, loading }: { metrics: MetricsResponse | null; loading: boolean }) {
   if (loading) return <Spinner />
   const models = metrics?.model_breakdown || []
@@ -517,7 +491,6 @@ function ModelsTab({ metrics, loading }: { metrics: MetricsResponse | null; load
           </Card>
         ))}
       </div>
-
       <Card className="overflow-hidden">
         <div className="px-5 py-4 border-b border-black/[0.05]">
           <h3 className="text-sm font-medium text-[#0a0a0a]">Model Breakdown</h3>
@@ -559,7 +532,6 @@ function ModelsTab({ metrics, loading }: { metrics: MetricsResponse | null; load
   )
 }
 
-// ── Drift ─────────────────────────────────────────────────────────────────────
 function DriftTab({ projectId, token }: { projectId: string; token: string }) {
   const [tests, setTests] = useState<DriftTest[]>([])
   const [loading, setLoading] = useState(true)
@@ -585,7 +557,6 @@ function DriftTab({ projectId, token }: { projectId: string; token: string }) {
         <h2 className="text-sm font-semibold text-[#0a0a0a]">Drift Tests</h2>
         <p className="text-xs text-[#999] mt-0.5">Monitor output quality with golden prompt evaluations</p>
       </div>
-
       {tests.length === 0 ? (
         <Card className="p-8">
           <Empty icon={FlaskConical} title="No drift tests" desc="Create drift tests via the API to monitor output quality." />
@@ -634,7 +605,6 @@ function DriftTab({ projectId, token }: { projectId: string; token: string }) {
   )
 }
 
-// ── Alerts ────────────────────────────────────────────────────────────────────
 function AlertsTab({ projectId, token }: { projectId: string; token: string }) {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(true)
@@ -672,7 +642,6 @@ function AlertsTab({ projectId, token }: { projectId: string; token: string }) {
           ))}
         </div>
       </div>
-
       {filtered.length === 0 ? (
         <Card className="p-8">
           <Empty icon={Bell} title={filter === 'all' ? 'No alerts' : `No ${filter} alerts`} desc="Alerts fire when thresholds are breached." />
@@ -712,7 +681,6 @@ function AlertsTab({ projectId, token }: { projectId: string; token: string }) {
   )
 }
 
-// ── API Keys ──────────────────────────────────────────────────────────────────
 function KeysTab({ projectId, token }: { projectId: string; token: string }) {
   const [keys, setKeys] = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(true)
@@ -822,14 +790,42 @@ function KeysTab({ projectId, token }: { projectId: string; token: string }) {
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
-function SettingsTab({ project }: { project: Project }) {
+function SettingsTab({ project, token, onProjectUpdate }: {
+  project: Project
+  token: string
+  onProjectUpdate: (p: Project) => void
+}) {
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [costThreshold, setCostThreshold] = useState(project.cost_alert_threshold_pct ?? 30)
+  const [latencyThreshold, setLatencyThreshold] = useState(project.latency_alert_threshold_pct ?? 50)
+  const [alertEmail, setAlertEmail] = useState(project.alert_email ?? '')
+  const [slackWebhook, setSlackWebhook] = useState(project.slack_webhook_url ?? '')
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      const updated = await projectsApi.update(project.id, {
+        cost_alert_threshold_pct: costThreshold,
+        latency_alert_threshold_pct: latencyThreshold,
+        alert_email: alertEmail || null,
+        slack_webhook_url: slackWebhook || null,
+      }, token)
+      onProjectUpdate(updated)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e: any) { alert(e.message) }
+    setSaving(false)
+  }
+
   return (
     <div className="space-y-5 max-w-xl">
       <div>
         <h2 className="text-sm font-semibold text-[#0a0a0a]">Settings</h2>
-        <p className="text-xs text-[#999] mt-0.5">Project details and configuration</p>
+        <p className="text-xs text-[#999] mt-0.5">Project configuration and alert thresholds</p>
       </div>
 
+      {/* Project Info */}
       <Card>
         <div className="divide-y divide-black/[0.04]">
           {[
@@ -850,6 +846,75 @@ function SettingsTab({ project }: { project: Project }) {
         </div>
       </Card>
 
+      {/* Alert Thresholds */}
+      <Card className="p-5">
+        <h3 className="text-xs font-medium text-[#0a0a0a] mb-1">Alert Thresholds</h3>
+        <p className="text-xs text-[#999] mb-4">Alert fires when metric exceeds X% above 7-day average</p>
+        <div className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs text-[#555]">Cost spike threshold</label>
+              <span className="text-xs font-mono font-medium text-[#0a0a0a]">{costThreshold}%</span>
+            </div>
+            <input type="range" min={10} max={200} step={5}
+              value={costThreshold}
+              onChange={e => setCostThreshold(Number(e.target.value))}
+              className="w-full accent-black h-1 rounded-full"
+            />
+            <div className="flex justify-between text-[10px] text-[#ccc] mt-1">
+              <span>10% (sensitive)</span>
+              <span>200% (relaxed)</span>
+            </div>
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs text-[#555]">Latency spike threshold</label>
+              <span className="text-xs font-mono font-medium text-[#0a0a0a]">{latencyThreshold}%</span>
+            </div>
+            <input type="range" min={10} max={200} step={5}
+              value={latencyThreshold}
+              onChange={e => setLatencyThreshold(Number(e.target.value))}
+              className="w-full accent-black h-1 rounded-full"
+            />
+            <div className="flex justify-between text-[10px] text-[#ccc] mt-1">
+              <span>10% (sensitive)</span>
+              <span>200% (relaxed)</span>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Notifications */}
+      <Card className="p-5">
+        <h3 className="text-xs font-medium text-[#0a0a0a] mb-1">Notifications</h3>
+        <p className="text-xs text-[#999] mb-4">Get notified when alerts fire</p>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-[#555] block mb-1.5">Alert email</label>
+            <input type="email" placeholder="you@company.com"
+              value={alertEmail}
+              onChange={e => setAlertEmail(e.target.value)}
+              className="w-full px-3 py-2 text-xs bg-[#fafafa] border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a] placeholder-[#ccc]"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-[#555] block mb-1.5">Slack webhook URL</label>
+            <input type="url" placeholder="https://hooks.slack.com/services/..."
+              value={slackWebhook}
+              onChange={e => setSlackWebhook(e.target.value)}
+              className="w-full px-3 py-2 text-xs bg-[#fafafa] border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a] placeholder-[#ccc]"
+            />
+          </div>
+        </div>
+      </Card>
+
+      {/* Save */}
+      <button onClick={handleSave} disabled={saving}
+        className="w-full h-9 bg-[#0a0a0a] hover:bg-[#222] text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
+        {saving ? <Loader2 size={13} className="animate-spin" /> : saved ? <><Check size={13} /> Saved!</> : 'Save changes'}
+      </button>
+
+      {/* Quick integration */}
       <Card className="p-5">
         <h3 className="text-xs font-medium text-[#0a0a0a] mb-3">Quick integration</h3>
         <div className="bg-[#0d0d0d] rounded-lg p-4 font-mono text-[11px] text-[#888] leading-relaxed">
@@ -907,6 +972,12 @@ export default function App() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  // Update project in state after settings save
+  function updateCurrentProject(updated: Project) {
+    setCurrentProject(updated)
+    setProjects(prev => prev.map(p => p.id === updated.id ? updated : p))
+  }
+
   if (authLoading) return (
     <div className="min-h-screen bg-[#fafafa] flex items-center justify-center">
       <div className="w-5 h-5 border-[1.5px] border-black/10 border-t-black/40 rounded-full animate-spin" />
@@ -923,7 +994,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen bg-[#fafafa]" style={{ fontFamily: "'Inter', -apple-system, sans-serif" }}>
-       <style>{`* { -webkit-font-smoothing: antialiased; } input:focus { outline: none; }`}</style>
+      <style>{`* { -webkit-font-smoothing: antialiased; } input:focus { outline: none; }`}</style>
 
       <Sidebar
         activeView={activeView} setActiveView={setActiveView}
@@ -933,7 +1004,6 @@ export default function App() {
       />
 
       <main className="flex-1 overflow-auto min-w-0">
-        {/* Header */}
         <header className="sticky top-0 z-10 bg-[#fafafa]/90 backdrop-blur-md border-b border-black/[0.05] px-7 py-3.5 flex items-center justify-between">
           <div>
             <h1 className="text-sm font-semibold text-[#0a0a0a]">{viewLabel[activeView]}</h1>
@@ -961,23 +1031,19 @@ export default function App() {
           </div>
         </header>
 
-        {/* Content */}
         <div className="p-7">
           {activeView === 'overview' && (
-  <OverviewTab
-    metrics={metrics}
-    alerts={alerts}
-    loading={loading}
-    onViewAlerts={() => setActiveView('alerts')}
-  />
-)}
-          {activeView === 'costs'     && <CostsTab metrics={metrics} loading={loading} />}
-          {activeView === 'latency'   && <LatencyTab metrics={metrics} loading={loading} />}
-          {activeView === 'models'    && <ModelsTab metrics={metrics} loading={loading} />}
-          {activeView === 'drift'     && currentProject && token && <DriftTab projectId={currentProject.id} token={token} />}
-          {activeView === 'alerts'    && currentProject && token && <AlertsTab projectId={currentProject.id} token={token} />}
-          {activeView === 'keys'      && currentProject && token && <KeysTab projectId={currentProject.id} token={token} />}
-          {activeView === 'settings'  && currentProject && <SettingsTab project={currentProject} />}
+            <OverviewTab metrics={metrics} alerts={alerts} loading={loading} onViewAlerts={() => setActiveView('alerts')} />
+          )}
+          {activeView === 'costs'    && <CostsTab metrics={metrics} loading={loading} />}
+          {activeView === 'latency'  && <LatencyTab metrics={metrics} loading={loading} />}
+          {activeView === 'models'   && <ModelsTab metrics={metrics} loading={loading} />}
+          {activeView === 'drift'    && currentProject && token && <DriftTab projectId={currentProject.id} token={token} />}
+          {activeView === 'alerts'   && currentProject && token && <AlertsTab projectId={currentProject.id} token={token} />}
+          {activeView === 'keys'     && currentProject && token && <KeysTab projectId={currentProject.id} token={token} />}
+          {activeView === 'settings' && currentProject && token && (
+            <SettingsTab project={currentProject} token={token} onProjectUpdate={updateCurrentProject} />
+          )}
         </div>
       </main>
     </div>

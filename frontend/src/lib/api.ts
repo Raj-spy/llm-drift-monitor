@@ -28,10 +28,14 @@ async function apiFetch<T>(
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
 export const projectsApi = {
-  list: (token: string) => apiFetch<Project[]>('/projects', { token }),
-  get: (id: string, token: string) => apiFetch<Project>(`/projects/${id}`, { token }),
+  list: (token: string) =>
+    apiFetch<Project[]>('/projects', { token }),
+  get: (id: string, token: string) =>
+    apiFetch<Project>(`/projects/${id}`, { token }),
   create: (data: CreateProjectInput, token: string) =>
     apiFetch<Project>('/projects', { method: 'POST', body: JSON.stringify(data), token }),
+  update: (projectId: string, data: Partial<UpdateProjectInput>, token: string) =>
+    apiFetch<Project>(`/projects/${projectId}`, { method: 'PATCH', body: JSON.stringify(data), token }),
 }
 
 // ─── Metrics ──────────────────────────────────────────────────────────────────
@@ -98,6 +102,11 @@ export interface Project {
   default_model: string
   is_active: boolean
   created_at: string
+  alert_email?: string
+  slack_webhook_url?: string
+  cost_alert_threshold_pct?: number
+  latency_alert_threshold_pct?: number
+  quality_score_threshold?: number
 }
 
 export interface CreateProjectInput {
@@ -107,6 +116,20 @@ export interface CreateProjectInput {
   default_model?: string
   alert_email?: string
   slack_webhook_url?: string
+  cost_alert_threshold_pct?: number
+  latency_alert_threshold_pct?: number
+}
+
+export interface UpdateProjectInput {
+  name?: string
+  description?: string
+  environment?: string
+  default_model?: string
+  alert_email?: string | null
+  slack_webhook_url?: string | null
+  cost_alert_threshold_pct?: number
+  latency_alert_threshold_pct?: number
+  quality_score_threshold?: number
 }
 
 export interface MetricsSummary {
@@ -206,5 +229,5 @@ export interface ApiKey {
   is_active: boolean
   created_at: string
   last_used_at?: string
-  full_key?: string  // Only on creation
+  full_key?: string
 }

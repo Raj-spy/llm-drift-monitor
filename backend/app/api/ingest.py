@@ -27,12 +27,12 @@ async def check_spikes_background(project_id: str) -> None:
     """
     try:
         from ..services.alert_service import AlertService
+        from datetime import date, timedelta
         supabase = get_supabase()
         alert_service = AlertService()
 
         now = datetime.now(timezone.utc)
-        one_hour_ago = now.replace(minute=now.minute - 60 if now.minute >= 60 else now.minute, second=0).isoformat() \
-            if False else datetime.fromtimestamp(now.timestamp() - 3600, tz=timezone.utc).isoformat()
+        one_hour_ago = datetime.fromtimestamp(now.timestamp() - 3600, tz=timezone.utc).isoformat()
 
         # Last 1 hour requests
         recent = supabase.table("llm_requests") \
@@ -43,10 +43,9 @@ async def check_spikes_background(project_id: str) -> None:
 
         recent_data = recent.data or []
         if len(recent_data) < 5:
-            return  # Not enough data
+            return
 
         # 7-day baseline from metrics_daily
-        from datetime import date, timedelta
         week_ago = (date.today() - timedelta(days=7)).isoformat()
         baseline = supabase.table("metrics_daily") \
             .select("total_cost_usd, avg_latency_ms") \
@@ -55,19 +54,16 @@ async def check_spikes_background(project_id: str) -> None:
             .execute()
 
         baseline_data = baseline.data or []
-        if not baseline_data:
-            return  # No baseline yet
 
         # Compute baselines
-        avg_cost_baseline = sum(d["total_cost_usd"] for d in baseline_data) / len(baseline_data)
+        avg_cost_baseline = sum(d["total_cost_usd"] for d in baseline_data) / len(baseline_data) if baseline_data else None
         latency_baselines = [d["avg_latency_ms"] for d in baseline_data if d["avg_latency_ms"]]
         avg_latency_baseline = sum(latency_baselines) / len(latency_baselines) if latency_baselines else None
 
         # Compute current hour metrics
         costs = [r["cost_usd"] for r in recent_data if r.get("cost_usd")]
         latencies = [r["latency_ms"] for r in recent_data if r.get("latency_ms")]
-
-        current_cost = sum(costs) / len(costs) if costs else 0
+        current_cost = sum(costs) / len(costs) if costs else None
         current_latency = sum(latencies) / len(latencies) if latencies else None
 
         # Get project thresholds
@@ -83,19 +79,19 @@ async def check_spikes_background(project_id: str) -> None:
         cost_threshold = project.data.get("cost_alert_threshold_pct", 50)
         latency_threshold = project.data.get("latency_alert_threshold_pct", 50)
 
-        # Duplicate check helper
+        # Duplicate check — same alert type is hour mein already fire nahi hua?
         def already_alerted(alert_type: str) -> bool:
             existing = supabase.table("alerts") \
                 .select("id") \
                 .eq("project_id", project_id) \
                 .eq("alert_type", alert_type) \
                 .eq("status", "active") \
-                .gte("triggered_at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00:00Z")) \
+                .gte("triggered_at", now.strftime("%Y-%m-%dT%H:00:00Z")) \
                 .execute()
             return bool(existing.data)
 
-        # Cost spike check
-        if avg_cost_baseline > 0 and current_cost > 0:
+        # ── Cost spike check ──────────────────────────────────────────
+        if avg_cost_baseline and avg_cost_baseline > 0 and current_cost:
             cost_change_pct = ((current_cost - avg_cost_baseline) / avg_cost_baseline) * 100
             if cost_change_pct > cost_threshold and not already_alerted("cost_spike"):
                 alert_service.create_cost_alert(
@@ -107,7 +103,7 @@ async def check_spikes_background(project_id: str) -> None:
                 )
                 logger.info(f"[spike] cost_spike fired for {project_id}: +{cost_change_pct:.0f}%")
 
-        # Latency spike check
+        # ── Latency spike check ───────────────────────────────────────
         if avg_latency_baseline and current_latency:
             latency_change_pct = ((current_latency - avg_latency_baseline) / avg_latency_baseline) * 100
             if latency_change_pct > latency_threshold and not already_alerted("latency_spike"):
@@ -120,9 +116,32 @@ async def check_spikes_background(project_id: str) -> None:
                 )
                 logger.info(f"[spike] latency_spike fired for {project_id}: +{latency_change_pct:.0f}%")
 
+        # ── Error rate check ──────────────────────────────────────────
+        total = len(recent_data)
+        failed = sum(1 for r in recent_data if r.get("status") != "success")
+
+        if total >= 5:
+            error_rate_pct = (failed / total) * 100
+            if error_rate_pct > 20 and not already_alerted("error_rate"):
+                severity = "critical" if error_rate_pct > 50 else "warning"
+                alert_service._create_alert(
+                    project_id=project_id,
+                    alert_type="error_rate",
+                    severity=severity,
+                    title=f"Error rate spike: {error_rate_pct:.0f}%",
+                    message=(
+                        f"{failed}/{total} requests failed in the last hour. "
+                        f"Error rate: {error_rate_pct:.0f}%"
+                    ),
+                    model=None,
+                    metric_value=error_rate_pct,
+                    threshold_value=20,
+                    percentage_change=error_rate_pct,
+                )
+                logger.info(f"[spike] error_rate fired for {project_id}: {error_rate_pct:.0f}%")
+
     except Exception as e:
         logger.error(f"Spike check failed for {project_id}: {e}")
-
 
 # ── Ingest endpoint ───────────────────────────────────────────────────────────
 

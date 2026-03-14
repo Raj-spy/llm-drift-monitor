@@ -44,7 +44,6 @@ async def create_project(
 ):
     supabase = get_supabase()
 
-    # Generate unique slug
     base_slug = re.sub(r"[^a-z0-9]+", "-", body.name.lower()).strip("-")
     slug = f"{base_slug}-{uuid.uuid4().hex[:6]}"
 
@@ -88,6 +87,39 @@ async def get_project(
     return ProjectResponse(**project)
 
 
+@router.patch("/projects/{project_id}", response_model=ProjectResponse)
+async def update_project(
+    project_id: str,
+    body: dict,
+    current_user: dict = Depends(get_current_user_from_jwt),
+    project: dict = Depends(verify_project_access),
+):
+    supabase = get_supabase()
+
+    allowed = {
+        "name", "description", "environment", "default_model",
+        "alert_email", "slack_webhook_url",
+        "cost_alert_threshold_pct", "latency_alert_threshold_pct",
+        "quality_score_threshold",
+    }
+    updates = {k: v for k, v in body.items() if k in allowed}
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+
+    result = (
+        supabase.table("projects")
+        .update(updates)
+        .eq("id", project_id)
+        .execute()
+    )
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    return ProjectResponse(**result.data[0])
+
+
 @router.delete("/projects/{project_id}", status_code=204)
 async def delete_project(
     project_id: str,
@@ -126,7 +158,7 @@ async def create_api_key(
 
     result = supabase.table("api_keys").insert(record).execute()
     resp = ApiKeyResponse(**result.data[0])
-    resp.full_key = full_key  # Only returned once on creation
+    resp.full_key = full_key
     return resp
 
 
@@ -171,7 +203,6 @@ async def get_metrics(
     project: dict = Depends(verify_project_access),
 ):
     supabase = get_supabase()
-    # Read ALL data directly from llm_requests — fully real-time, no aggregation delay
     start_dt = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     prev_dt  = (datetime.now(timezone.utc) - timedelta(days=days * 2)).isoformat()
 
@@ -196,7 +227,6 @@ async def get_metrics(
         .execute()
     ).data or []
 
-    # Totals
     total_requests = len(rows)
     total_tokens   = sum((r.get("prompt_tokens") or 0) + (r.get("completion_tokens") or 0) for r in rows)
     total_cost     = sum(r.get("cost_usd") or 0.0 for r in rows)
@@ -212,7 +242,6 @@ async def get_metrics(
     requests_change = ((total_requests - prev_requests) / prev_requests * 100) if prev_requests else 0
     cost_change     = ((total_cost - prev_cost) / prev_cost * 100) if prev_cost else 0
 
-    # Daily trend grouped by date
     from collections import defaultdict
     day_map: dict[str, dict] = defaultdict(lambda: {"total_requests": 0, "total_tokens": 0, "total_cost_usd": 0.0, "lats": []})
     mdl_map: dict[str, dict] = defaultdict(lambda: {"total_requests": 0, "total_tokens": 0, "total_cost_usd": 0.0, "lats": []})
@@ -272,6 +301,8 @@ async def get_metrics(
         daily_trend=daily_trend, model_breakdown=breakdown, period_days=days,
     )
 
+
+# ─── ALERTS ───────────────────────────────────────────────────────────────────
 
 @router.get("/projects/{project_id}/alerts", response_model=list[AlertResponse])
 async def get_alerts(
@@ -385,7 +416,6 @@ async def run_drift_test(
     current_user: dict = Depends(get_current_user_from_jwt),
     project: dict = Depends(verify_project_access),
 ):
-    """Manually trigger a drift test run."""
     svc = DriftDetectionService()
     result = svc.run_drift_test(test_id)
     if not result:
