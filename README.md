@@ -1,46 +1,210 @@
-# LLM Cost & Quality Drift Monitor
-_7$ew2_iD39kbkn
+# LLM Drift Monitor
 
-> Production-ready LLM observability. Monitor cost, latency, and output quality drift across your AI applications.
+> Real-time observability for production LLM applications. Track cost, latency, and output quality — with automatic spike detection and alerts.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://python.org)
 [![Next.js 14](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org)
+[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://llm-drift-monitor-pi.vercel.app)
 
 ---
 
-## Quick Start
+## The Problem
 
+You ship an AI feature. It works great on day one. Then silently — costs spike 3x, latency doubles, output quality degrades. You find out from a user complaint, not your dashboard.
+
+**LLM Drift Monitor fixes this.**
+
+---
+
+## What It Does
+
+- **Cost monitoring** — track spend per model, per project, per day
+- **Latency tracking** — p50, p90, p99 breakdowns across all LLM calls
+- **Automatic spike detection** — alerts fire within 60 seconds of a cost or latency anomaly
+- **Quality drift detection** — run golden prompt evaluations daily; get alerted when output quality drops
+- **Multi-provider** — works with OpenAI, Anthropic, Groq, and any OpenAI-compatible API
+
+---
+
+## 2-Minute Setup
+
+**Python:**
 ```python
-pip install llm-monitor
+pip install llm-monitor python-dotenv
 
 from llm_monitor import monitor
 
 monitor.configure(
-    api_key="lmd_your_key_here",
-    project_id="your-project-uuid",
+    api_key="lmd_your_key",
+    project_id="your-project-id",
+    backend_url="https://your-backend.railway.app/v1",
 )
 
-# Drop-in replacement for OpenAI calls
 response = monitor.chat(
     model="gpt-4o",
-    messages=[{"role": "user", "content": "Hello!"}]
+    messages=[{"role": "user", "content": "Hello!"}],
 )
+monitor.flush()
 ```
 
-That's it. Every call is now tracked for cost, latency, and quality.
+**Node.js:**
+```javascript
+const axios = require('axios');
+
+async function trackLLM(model, response, latencyMs) {
+  await axios.post('https://your-backend.railway.app/v1/ingest/batch', {
+    events: [{
+      id: crypto.randomUUID(),
+      project_id: 'your-project-id',
+      model, provider: 'openai', environment: 'production',
+      prompt_tokens: response.usage?.prompt_tokens || 0,
+      completion_tokens: response.usage?.completion_tokens || 0,
+      total_tokens: response.usage?.total_tokens || 0,
+      latency_ms: latencyMs, cost_usd: 0, status: 'success',
+      requested_at: new Date().toISOString(),
+      request_id: crypto.randomUUID(),
+      tags: {}, user_id: null, session_id: null,
+      prompt_text: null, response_text: null, error_message: null,
+    }]
+  }, { headers: { Authorization: 'Bearer lmd_your_key' } });
+}
+
+const start = Date.now();
+const response = await openai.chat.completions.create({ ... });
+trackLLM('gpt-4o', response, Date.now() - start);
+```
 
 ---
 
 ## Architecture
 
 ```
-Customer App → Python SDK → FastAPI Backend → Supabase DB
-                                    ↓               ↓
-                            Drift Detection    Next.js Dashboard
-                                    ↓               ↓
-                            Slack/Email Alerts   Real-time Charts
+Your App  →  SDK / HTTP  →  FastAPI Backend  →  Supabase
+                                  ↓                  ↓
+                          Spike Detection      Real-time Dashboard
+                                  ↓
+                        Slack / Email Alerts
 ```
+
+**Stack:**
+- **Backend** — FastAPI + APScheduler, deployed on Railway
+- **Database** — Supabase (Postgres)
+- **Frontend** — Next.js 14, deployed on Vercel
+- **SDK** — Python (`pip install llm-monitor`)
+
+---
+
+## How Spike Detection Works
+
+Every ingest batch triggers a background check:
+
+```
+Last 1 hour avg  vs  7-day rolling baseline
+        ↓
+Cost spike > 30%?   → Warning alert
+Cost spike > 100%?  → Critical alert
+Latency spike > 50%? → Warning alert
+Error rate > 20%?   → Warning alert
+Error rate > 50%?   → Critical alert
+```
+
+Thresholds are configurable per project from the dashboard.
+
+---
+
+## Self-Hosting
+
+### 1. Supabase
+
+```bash
+# Create project at supabase.com
+# SQL Editor → run docs/schema.sql
+```
+
+### 2. Backend
+
+```bash
+cd backend
+cp .env.example .env
+# Fill in SUPABASE_URL, SUPABASE_SERVICE_KEY, SECRET_KEY
+
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+### 3. Frontend
+
+```bash
+cd frontend
+npm install
+cp .env.example .env.local
+# Fill in NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_API_URL
+
+npm run dev
+```
+
+**Environment variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_SERVICE_KEY` | Supabase service role key |
+| `SECRET_KEY` | Random secret for JWT signing |
+| `NEXT_PUBLIC_SUPABASE_URL` | Same as SUPABASE_URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+| `NEXT_PUBLIC_API_URL` | Your backend URL |
+
+---
+
+## API Reference
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/v1/ingest/batch` | API Key | Ingest LLM events from SDK |
+| `GET` | `/v1/projects` | JWT | List projects |
+| `POST` | `/v1/projects` | JWT | Create project |
+| `PATCH` | `/v1/projects/{id}` | JWT | Update project settings |
+| `GET` | `/v1/projects/{id}/metrics` | JWT | Real-time metrics |
+| `GET` | `/v1/alerts/{id}` | JWT | List alerts |
+| `GET` | `/v1/alerts/{id}/summary` | JWT | Alert counts by type |
+| `POST` | `/v1/alerts/{id}/acknowledge` | JWT | Acknowledge alert |
+| `POST` | `/v1/alerts/{id}/resolve` | JWT | Resolve alert |
+| `POST` | `/v1/projects/{id}/drift-tests` | JWT | Create drift test |
+| `POST` | `/v1/projects/{id}/drift-tests/{id}/run` | JWT | Run drift test |
+| `GET` | `/health` | None | Health check |
+
+---
+
+## Quality Drift Detection
+
+Define golden prompts once. Run them daily. Get alerted when output quality drops.
+
+```python
+# Create a drift test via API
+POST /v1/projects/{id}/drift-tests
+{
+  "name": "Customer Support Quality",
+  "model": "gpt-4o",
+  "evaluator_model": "claude-3-5-haiku-20241022",
+  "schedule": "daily",
+  "golden_prompts": [
+    {
+      "prompt": "How do I reset my password?",
+      "expected_response": "Click forgot password on login page...",
+      "weight": 1.0
+    }
+  ]
+}
+```
+
+**Scoring (0-10):**
+- **9-10** — Perfect quality
+- **7-8** — Good, minor differences
+- **4-6** — Noticeable degradation
+- **0-3** — Major failure
+
+Alert fires when score drops below threshold (default: 7.0).
 
 ---
 
@@ -48,229 +212,65 @@ Customer App → Python SDK → FastAPI Backend → Supabase DB
 
 ```
 llm-drift-monitor/
-├── sdk/                     # Python SDK (pip package)
+├── sdk/                        # Python SDK
 │   └── llm_monitor/
-│       ├── __init__.py      # Public API: monitor, LLMMonitor, MonitorConfig
-│       ├── monitor.py       # Core wrapper (OpenAI + Anthropic)
-│       ├── config.py        # Configuration
-│       └── pricing.py       # Model pricing database
+│       ├── monitor.py          # Core wrapper
+│       ├── config.py           # Configuration
+│       └── pricing.py          # Model pricing
 │
-├── backend/                 # FastAPI backend (Docker)
-│   ├── Dockerfile
-│   ├── requirements.txt
+├── backend/                    # FastAPI backend
 │   └── app/
-│       ├── main.py          # FastAPI app + lifespan scheduler
 │       ├── api/
-│       │   ├── ingest.py    # POST /ingest/batch (SDK data)
-│       │   └── dashboard.py # Projects, metrics, alerts, drift tests
+│       │   ├── ingest.py       # SDK ingestion + spike detection
+│       │   ├── dashboard.py    # Projects, metrics, drift tests
+│       │   └── alerts.py       # Alert CRUD
 │       ├── core/
-│       │   ├── config.py    # Settings (pydantic-settings)
-│       │   ├── auth.py      # JWT + API key auth
-│       │   └── supabase.py  # Supabase client
-│       ├── models/
-│       │   └── schemas.py   # Pydantic request/response models
+│       │   ├── auth.py         # JWT + API key auth (with caching)
+│       │   └── limiter.py      # Rate limiting
 │       └── services/
-│           ├── cost_service.py   # Cost tracking + spike detection
-│           ├── drift_service.py  # Quality drift detection (LLM evaluator)
-│           └── alert_service.py  # Slack + email alerting
+│           ├── cost_service.py  # Cost tracking + spike detection
+│           ├── drift_service.py # Quality drift (LLM evaluator)
+│           └── alert_service.py # Slack + email dispatch
 │
-├── frontend/                # Next.js dashboard (Vercel)
+├── frontend/                   # Next.js dashboard
 │   └── src/
-│       ├── app/
-│       │   ├── layout.tsx
-│       │   ├── page.tsx     # Main dashboard UI
-│       │   └── globals.css
-│       └── lib/
-│           └── api.ts       # Typed API client
+│       ├── app/dashboard/      # Main dashboard
+│       └── lib/api.ts          # Typed API client
 │
-├── docs/
-│   ├── ARCHITECTURE.md      # Full system design
-│   └── schema.sql           # Supabase schema (run this first)
-│
-├── docker-compose.yml
-├── .env.example
-└── README.md
+└── docs/
+    └── schema.sql              # Supabase schema
 ```
 
 ---
 
-## Deployment Guide
+## Roadmap
 
-### Step 1: Supabase Setup
-
-1. Create project at [supabase.com](https://supabase.com)
-2. Go to SQL Editor → run `docs/schema.sql`
-3. Copy your project URL and service role key
-
-```bash
-# From Supabase Dashboard → Settings → API
-SUPABASE_URL=https://xxxxx.supabase.co
-SUPABASE_SERVICE_KEY=eyJhbGci...
-SUPABASE_ANON_KEY=eyJhbGci...
-```
-
-### Step 2: Backend (Docker)
-
-```bash
-cd backend
-cp ../.env.example .env
-# Fill in your values in .env
-
-# Local development
-docker compose up -d
-
-# Production (with nginx + TLS)
-docker compose --profile production up -d
-
-# Verify
-curl http://localhost:8000/health
-# {"status":"ok","version":"0.1.0","environment":"development"}
-```
-
-### Step 3: Frontend (Vercel)
-
-```bash
-cd frontend
-npm install
-
-# Set environment variables
-cp ../.env.example .env.local
-# Fill in NEXT_PUBLIC_* variables
-
-# Local development
-npm run dev
-
-# Deploy to Vercel
-npx vercel --prod
-```
-
-Set these in Vercel Dashboard → Project Settings → Environment Variables:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_API_URL` (your backend URL)
-
-### Step 4: SDK (PyPI)
-
-```bash
-cd sdk
-
-# Install locally for testing
-pip install -e ".[all]"
-
-# Publish to PyPI
-pip install build twine
-python -m build
-twine upload dist/*
-```
-
----
-
-## SDK Usage
-
-### Basic Usage
-
-```python
-from llm_monitor import monitor
-
-# Configure once at startup
-monitor.configure(
-    api_key="lmd_your_api_key",
-    project_id="your-project-uuid",
-    # Optional:
-    capture_prompt=True,      # Store prompt text
-    capture_response=True,    # Store response text
-    flush_interval=5.0,       # Seconds between auto-flushes
-    debug=True,               # Log captured events
-)
-
-# Use like OpenAI
-response = monitor.chat(
-    model="gpt-4o",
-    messages=[{"role": "user", "content": "Summarize this article: ..."}],
-    user_id="user_123",       # Optional: track per-user
-    session_id="sess_456",    # Optional: track conversations
-    tags={"feature": "summary", "team": "growth"},  # Custom tags
-)
-```
-
-### Wrap Existing Clients
-
-```python
-import openai
-from llm_monitor import monitor
-
-# Wrap your existing client — zero code changes needed
-client = monitor.wrap_openai(openai.OpenAI())
-
-# Use exactly like before
-response = client.chat.completions.create(
-    model="gpt-4o",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-```
-
-### Environment Variables
-
-```bash
-LLM_MONITOR_API_KEY=lmd_...
-LLM_MONITOR_PROJECT_ID=uuid
-LLM_MONITOR_BACKEND_URL=https://api.yourdomain.com
-LLM_MONITOR_DEBUG=true
-```
-
----
-
-## API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/v1/ingest/batch` | SDK data ingestion (API key auth) |
-| `GET` | `/v1/projects` | List projects |
-| `POST` | `/v1/projects` | Create project |
-| `GET` | `/v1/projects/{id}/metrics` | Aggregated metrics |
-| `GET` | `/v1/projects/{id}/alerts` | Active alerts |
-| `PATCH` | `/v1/projects/{id}/alerts/{id}` | Acknowledge/resolve alert |
-| `POST` | `/v1/projects/{id}/drift-tests` | Create drift test |
-| `POST` | `/v1/projects/{id}/drift-tests/{id}/run` | Run drift test manually |
-| `GET` | `/health` | Health check |
-
----
-
-## Pricing Tiers
-
-| Plan | Price | Requests/month | Projects | Drift Tests | Support |
-|------|-------|----------------|----------|-------------|---------|
-| **Starter** | $49/mo | 50,000 | 2 | 5 | Email |
-| **Growth** | $99/mo | 100,000 | 10 | 20 | Priority |
-| **Scale** | $299/mo | Unlimited | Unlimited | Unlimited | Slack |
-
----
-
-## Quality Drift Detection Algorithm
-
-1. **Upload golden prompts** — define 5-50 test prompts with optional expected responses
-2. **Daily runner** — scheduled job calls your LLM model with each prompt
-3. **Evaluator scoring** — Claude (or GPT-4o) scores each response 0-10:
-   - 10: Perfect quality, matches expected output
-   - 7-9: Good, minor differences
-   - 4-6: Noticeable quality degradation
-   - 0-3: Major failure
-4. **Weighted average** — compute overall score (you can weight important prompts higher)
-5. **Baseline comparison** — compare to established baseline from first run
-6. **Alert trigger** — if score drops below threshold (default: 7.0), fire alert via Slack + email
+- [ ] Node.js SDK (`npm install llmpulse`)
+- [ ] Webhook support
+- [ ] Team collaboration
+- [ ] Custom alert rules
+- [ ] OpenTelemetry integration
 
 ---
 
 ## Contributing
 
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/my-feature`
-3. Commit changes: `git commit -am 'Add feature'`
-4. Push: `git push origin feature/my-feature`
-5. Create Pull Request
+PRs welcome. For major changes, open an issue first.
+
+```bash
+git clone https://github.com/Raj-spy/llm-drift-monitor
+cd llm-drift-monitor
+# See backend/README.md and frontend/README.md for setup
+```
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT — free to use, modify, and deploy.
+
+---
+
+<p align="center">
+  Built by <a href="https://twitter.com/Rajj_704">@Rajj_704</a>
+</p>
