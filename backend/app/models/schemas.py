@@ -71,6 +71,11 @@ class ProjectResponse(BaseModel):
     default_model: str
     is_active: bool
     created_at: str
+    alert_email: Optional[str] = None
+    slack_webhook_url: Optional[str] = None
+    cost_alert_threshold_pct: Optional[float] = None
+    latency_alert_threshold_pct: Optional[float] = None
+    quality_score_threshold: Optional[float] = None
 
 
 # ─── API Key Models ───────────────────────────────────────────────────────────
