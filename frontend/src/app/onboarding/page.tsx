@@ -63,9 +63,13 @@ monitor.configure(
     backend_url="https://innovative-learning-production-7c85.up.railway.app/v1",
 )
 
+# Add this to the file where your LLM calls happen
+# e.g. main.py, app.py, routes/chat.py, services/ai.py
+# Replace your existing LLM calls with monitor.chat()
+
 response = monitor.chat(
     model="${model || 'llama-3.3-70b-versatile'}",
-    messages=[{"role": "user", "content": "Hello!"}],
+    messages=[{"role": "user", "content": "Your message here"}],
 )
 monitor.flush()
 print(response.choices[0].message.content)`
