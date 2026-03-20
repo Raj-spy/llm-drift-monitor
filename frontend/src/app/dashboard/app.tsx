@@ -809,7 +809,7 @@ function DriftTab({ projectId, token }: { projectId: string; token: string }) {
           <div className="space-y-3">
             {tests.map(test => {
               const score = test.last_score
-              const scoreColor = score === undefined ? '#ccc' : score >= 8 ? '#10b981' : score >= 6 ? '#f59e0b' : '#ef4444'
+              const scoreColor = score == null ? '#ccc' : score >= 8 ? '#10b981' : score >= 6 ? '#f59e0b' : '#ef4444'
               const alert = score !== undefined && score < 7
               return (
                 <Card key={test.id} className={`p-5 ${alert ? 'border-red-200' : ''}`}>
@@ -818,7 +818,7 @@ function DriftTab({ projectId, token }: { projectId: string; token: string }) {
                       <div className="flex items-center gap-2.5 mb-2 flex-wrap">
                         <span className="text-sm font-medium text-[#0a0a0a]">{test.name}</span>
                         {alert && <Badge variant="danger">Quality alert</Badge>}
-                        {score === undefined && <Badge variant="default">Not run yet</Badge>}
+                        {score == null && <Badge variant="default">Not run yet</Badge>}
                       </div>
                       <div className="flex items-center gap-3 flex-wrap">
                         <code className="text-[11px] font-mono bg-black/[0.04] px-2 py-0.5 rounded text-[#555]">{test.model}</code>
@@ -831,7 +831,7 @@ function DriftTab({ projectId, token }: { projectId: string; token: string }) {
                       </div>
                     </div>
                     <div className="flex items-center gap-4 flex-shrink-0">
-                      {score !== undefined && (
+                      {score != null && (
                         <div className="text-right">
                           <div className="text-2xl font-semibold tabular-nums tracking-tight" style={{ color: scoreColor }}>{score.toFixed(1)}</div>
                           <div className="text-[10px] text-[#ccc]">/ 10</div>
