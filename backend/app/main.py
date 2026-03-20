@@ -16,6 +16,7 @@ from .api.dashboard import router as dashboard_router
 from .api.ingest import router as ingest_router
 from .core.config import get_settings
 from .models.schemas import HealthResponse
+from .api.drift import router as drift_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -106,6 +107,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router, prefix="/v1")
     app.include_router(billing_router, prefix="/v1")
     app.include_router(alerts_router, prefix="/v1")
+    app.include_router(drift_router, prefix="/v1")
 
     @app.get("/health", response_model=HealthResponse, tags=["System"])
     async def health():
@@ -114,6 +116,9 @@ def create_app() -> FastAPI:
     @app.get("/", include_in_schema=False)
     async def root():
         return JSONResponse({"service": "LLM Drift Monitor API", "version": "0.1.0"})
+    
+
+    
 
     return app
 

@@ -4,14 +4,18 @@ load_dotenv()
 from llm_monitor import monitor
 
 monitor.configure(
-    api_key="lmd_-AtQZdUmk5kIyQOW2es6hvSv4Y8AQm-1wUEEHSLLw3U",
-    project_id="5516498e-6502-4a9f-b83b-e340ab113923",
+    api_key="lmd_KPkPqF5XE7swOcZ3LbNsnqYFw3BnGFjJ2YEGg-8ZBwU",
+    project_id="f7b3f313-eb4d-4b1f-8c4f-d6f6fb957173",
     backend_url="https://innovative-learning-production-7c85.up.railway.app/v1",
 )
 
+# Add this to the file where your LLM calls happen
+# e.g. main.py, app.py, routes/chat.py, services/ai.py
+# Replace your existing LLM calls with monitor.chat()
+
 response = monitor.chat(
     model="llama-3.3-70b-versatile",
-    messages=[{"role": "user", "content": "Hello!"}],
+    messages=[{"role": "user", "content": "Your message here"}],
 )
 monitor.flush()
 print(response.choices[0].message.content)

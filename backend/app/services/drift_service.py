@@ -280,3 +280,4 @@ class DriftDetectionService:
                 self.run_drift_test(test["id"])
             except Exception as e:
                 logger.error(f"Failed drift test {test['id']} ({test['name']}): {e}")
+
