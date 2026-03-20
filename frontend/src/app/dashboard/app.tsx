@@ -11,7 +11,7 @@ import {
   AlertTriangle, BarChart3, Bell, Brain, Clock, ChevronsUpDown,
   DollarSign, FlaskConical, Key, LayoutDashboard, Loader2,
   LogOut, Plus, RefreshCw, Settings, TrendingUp, TrendingDown,
-  Copy, Check, ExternalLink, Activity
+  Copy, Check, ExternalLink, Activity, X, Trash2, ChevronDown
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import {
@@ -165,7 +165,7 @@ function Sidebar({ activeView, setActiveView, projects, currentProject, setCurre
             <rect x="11" y="11" width="8" height="8" rx="1.5" fill="#0a0a0a"/>
           </svg>
           <div>
-            <div className="text-sm font-semibold text-[#0a0a0a] tracking-tight">LLM Monitor</div>
+            <div className="text-sm font-semibold text-[#0a0a0a] tracking-tight">LLM Drift Monitor</div>
             <div className="flex items-center gap-1 mt-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               <span className="text-[10px] text-[#999]">Live</span>
@@ -532,10 +532,223 @@ function ModelsTab({ metrics, loading }: { metrics: MetricsResponse | null; load
   )
 }
 
+// ── Drift Tab ─────────────────────────────────────────────────────────────────
+
+interface GoldenPrompt {
+  id: string
+  prompt: string
+  expected_response: string
+  weight: number
+}
+
+const MODELS = [
+  { label: 'GPT-4o mini', value: 'gpt-4o-mini' },
+  { label: 'GPT-4o', value: 'gpt-4o' },
+  { label: 'GPT-3.5 Turbo', value: 'gpt-3.5-turbo' },
+  { label: 'Claude 3.5 Haiku', value: 'claude-3-5-haiku-20241022' },
+  { label: 'Claude 3.5 Sonnet', value: 'claude-sonnet-4-5' },
+  { label: 'Claude 3 Opus', value: 'claude-opus-4-5' },
+]
+
+const EVALUATOR_MODELS = [
+  { label: 'Claude 3.5 Haiku (fast, cheap)', value: 'claude-3-5-haiku-20241022' },
+  { label: 'Claude 3.5 Sonnet (balanced)', value: 'claude-sonnet-4-5' },
+  { label: 'GPT-4o mini', value: 'gpt-4o-mini' },
+]
+
+const SCHEDULES = [
+  { label: 'Daily (06:00 UTC)', value: 'daily' },
+  { label: 'Hourly', value: 'hourly' },
+  { label: 'Manual only', value: 'manual' },
+]
+
+function newPrompt(): GoldenPrompt {
+  return { id: crypto.randomUUID(), prompt: '', expected_response: '', weight: 1.0 }
+}
+
+function PromptRow({ prompt, index, onChange, onRemove, canRemove }: {
+  prompt: GoldenPrompt; index: number
+  onChange: (id: string, field: keyof GoldenPrompt, value: string | number) => void
+  onRemove: (id: string) => void; canRemove: boolean
+}) {
+  return (
+    <div className="border border-black/[0.07] rounded-xl p-4 space-y-3 bg-[#fafafa]">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-medium text-[#999] uppercase tracking-wide">Prompt {index + 1}</span>
+        {canRemove && (
+          <button onClick={() => onRemove(prompt.id)} className="text-[#ccc] hover:text-red-400 transition-colors p-1 rounded">
+            <Trash2 size={12} />
+          </button>
+        )}
+      </div>
+      <div>
+        <label className="text-[10px] text-[#999] block mb-1">Golden prompt <span className="text-red-400">*</span></label>
+        <textarea rows={2} placeholder="e.g. Summarize the following text in one sentence..."
+          value={prompt.prompt} onChange={e => onChange(prompt.id, 'prompt', e.target.value)}
+          className="w-full px-3 py-2 text-xs bg-white border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a] placeholder-[#ccc] resize-none"
+        />
+      </div>
+      <div>
+        <label className="text-[10px] text-[#999] block mb-1">
+          Expected response <span className="text-[#ccc]">(optional — helps Claude evaluate more accurately)</span>
+        </label>
+        <textarea rows={2} placeholder="e.g. Light scattering causes the sky to appear blue."
+          value={prompt.expected_response} onChange={e => onChange(prompt.id, 'expected_response', e.target.value)}
+          className="w-full px-3 py-2 text-xs bg-white border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a] placeholder-[#ccc] resize-none"
+        />
+      </div>
+      <div className="flex items-center gap-3">
+        <label className="text-[10px] text-[#999] whitespace-nowrap">Weight</label>
+        <input type="number" min={0.1} max={10} step={0.1} value={prompt.weight}
+          onChange={e => onChange(prompt.id, 'weight', parseFloat(e.target.value) || 1)}
+          className="w-20 px-2 py-1.5 text-xs bg-white border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a]"
+        />
+        <span className="text-[10px] text-[#ccc]">Higher weight = more impact on overall score</span>
+      </div>
+    </div>
+  )
+}
+
+function CreateDriftModal({ projectId, token, onClose, onCreated }: {
+  projectId: string; token: string; onClose: () => void; onCreated: () => void
+}) {
+  const [name, setName] = useState('')
+  const [model, setModel] = useState('gpt-4o-mini')
+  const [evaluatorModel, setEvaluatorModel] = useState('claude-3-5-haiku-20241022')
+  const [schedule, setSchedule] = useState('daily')
+  const [prompts, setPrompts] = useState<GoldenPrompt[]>([newPrompt()])
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  function updatePrompt(id: string, field: keyof GoldenPrompt, value: string | number) {
+    setPrompts(p => p.map(x => x.id === id ? { ...x, [field]: value } : x))
+  }
+
+  async function handleCreate() {
+    if (!name.trim()) return setError('Test name is required')
+    const valid = prompts.filter(p => p.prompt.trim())
+    if (valid.length === 0) return setError('Add at least one golden prompt')
+    setSaving(true); setError('')
+    try {
+      await driftApi.create(projectId, {
+        name: name.trim(), model, evaluator_model: evaluatorModel, schedule,
+        golden_prompts: valid.map(p => ({
+          prompt: p.prompt.trim(),
+          expected_response: p.expected_response.trim() || undefined,
+          weight: p.weight,
+        })),
+      }, token)
+      onCreated(); onClose()
+    } catch (e: any) { setError(e.message || 'Failed to create drift test') }
+    setSaving(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl border border-black/[0.08] shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-black/[0.05]">
+          <div>
+            <h2 className="text-sm font-semibold text-[#0a0a0a]">New Drift Test</h2>
+            <p className="text-xs text-[#999] mt-0.5">Define golden prompts to monitor output quality over time</p>
+          </div>
+          <button onClick={onClose} className="text-[#ccc] hover:text-[#666] transition-colors p-1 rounded-lg">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          <div>
+            <label className="text-xs text-[#555] font-medium block mb-1.5">Test name <span className="text-red-400">*</span></label>
+            <input type="text" placeholder="e.g. Summarization Quality, Code Generation, Customer Support Tone"
+              value={name} onChange={e => setName(e.target.value)}
+              className="w-full px-3 py-2 text-xs bg-[#fafafa] border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a] placeholder-[#ccc]"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-[#555] font-medium block mb-1.5">Model to test</label>
+              <div className="relative">
+                <select value={model} onChange={e => setModel(e.target.value)}
+                  className="w-full appearance-none px-3 py-2 text-xs bg-[#fafafa] border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a] pr-7">
+                  {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+                <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#ccc] pointer-events-none" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-[#555] font-medium block mb-1.5">Schedule</label>
+              <div className="relative">
+                <select value={schedule} onChange={e => setSchedule(e.target.value)}
+                  className="w-full appearance-none px-3 py-2 text-xs bg-[#fafafa] border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a] pr-7">
+                  {SCHEDULES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+                <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#ccc] pointer-events-none" />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-[#555] font-medium block mb-1.5">Evaluator model</label>
+            <div className="relative">
+              <select value={evaluatorModel} onChange={e => setEvaluatorModel(e.target.value)}
+                className="w-full appearance-none px-3 py-2 text-xs bg-[#fafafa] border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a] pr-7">
+                {EVALUATOR_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+              <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#ccc] pointer-events-none" />
+            </div>
+            <p className="text-[10px] text-[#ccc] mt-1">This model scores your golden prompt responses on a 0–10 scale</p>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs text-[#555] font-medium">Golden prompts</label>
+              <span className="text-[10px] text-[#ccc]">{prompts.length} prompt{prompts.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="space-y-3">
+              {prompts.map((p, i) => (
+                <PromptRow key={p.id} prompt={p} index={i}
+                  onChange={updatePrompt}
+                  onRemove={id => setPrompts(p => p.filter(x => x.id !== id))}
+                  canRemove={prompts.length > 1}
+                />
+              ))}
+            </div>
+            <button onClick={() => setPrompts(p => [...p, newPrompt()])}
+              className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 text-xs text-[#999] hover:text-[#0a0a0a] border border-dashed border-black/[0.1] hover:border-black/[0.2] rounded-xl transition-all">
+              <Plus size={12} /> Add another prompt
+            </button>
+          </div>
+
+          {error && (
+            <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-black/[0.05] flex items-center justify-between gap-3">
+          <p className="text-[10px] text-[#ccc] leading-relaxed max-w-xs">
+            After creating, click <strong className="text-[#bbb]">Run</strong> to get your first score and set the baseline.
+          </p>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-xs text-[#666] hover:text-[#0a0a0a] transition-colors">Cancel</button>
+            <button onClick={handleCreate} disabled={saving || !name.trim()}
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#0a0a0a] hover:bg-[#222] text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
+              {saving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+              Create test
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DriftTab({ projectId, token }: { projectId: string; token: string }) {
   const [tests, setTests] = useState<DriftTest[]>([])
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState<string | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); try { setTests(await driftApi.list(projectId, token)) } catch {} setLoading(false)
@@ -545,63 +758,99 @@ function DriftTab({ projectId, token }: { projectId: string; token: string }) {
 
   async function run(id: string) {
     setRunning(id)
-    try { await driftApi.run(projectId, id, token); await load() } catch (e: any) { alert(e.message) }
+    try {
+      await driftApi.run(projectId, id, token)
+      setTimeout(() => load(), 3000)
+    } catch (e: any) { alert(e.message) }
     setRunning(null)
   }
 
   if (loading) return <Spinner />
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-sm font-semibold text-[#0a0a0a]">Drift Tests</h2>
-        <p className="text-xs text-[#999] mt-0.5">Monitor output quality with golden prompt evaluations</p>
-      </div>
-      {tests.length === 0 ? (
-        <Card className="p-8">
-          <Empty icon={FlaskConical} title="No drift tests" desc="Create drift tests via the API to monitor output quality." />
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {tests.map(test => {
-            const score = test.last_score
-            const scoreColor = score === undefined ? '#ccc' : score >= 8 ? '#10b981' : score >= 6 ? '#f59e0b' : '#ef4444'
-            const alert = score !== undefined && score < 7
-            return (
-              <Card key={test.id} className={`p-5 ${alert ? 'border-red-200' : ''}`}>
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2.5 mb-2 flex-wrap">
-                      <span className="text-sm font-medium text-[#0a0a0a]">{test.name}</span>
-                      {alert && <Badge variant="danger">Quality alert</Badge>}
-                    </div>
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <code className="text-[11px] font-mono bg-black/[0.04] px-2 py-0.5 rounded text-[#555]">{test.model}</code>
-                      <span className="text-[11px] text-[#999]">{test.golden_prompt_count ?? 0} prompts</span>
-                      <span className="text-[11px] text-[#999] capitalize">{test.schedule}</span>
-                      {test.last_run_at && <span className="text-[11px] text-[#ccc]">Last run {timeAgo(test.last_run_at)}</span>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 flex-shrink-0">
-                    {score !== undefined && (
-                      <div className="text-right">
-                        <div className="text-2xl font-semibold tabular-nums tracking-tight" style={{ color: scoreColor }}>{score.toFixed(1)}</div>
-                        <div className="text-[10px] text-[#ccc]">/ 10</div>
-                      </div>
-                    )}
-                    <button onClick={() => run(test.id)} disabled={running === test.id}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[#666] bg-black/[0.04] hover:bg-black/[0.07] rounded-lg transition-colors disabled:opacity-40 border border-black/[0.06]">
-                      {running === test.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                      Run
-                    </button>
-                  </div>
-                </div>
-              </Card>
-            )
-          })}
-        </div>
+    <>
+      {showCreate && (
+        <CreateDriftModal
+          projectId={projectId} token={token}
+          onClose={() => setShowCreate(false)} onCreated={load}
+        />
       )}
-    </div>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-[#0a0a0a]">Drift Tests</h2>
+            <p className="text-xs text-[#999] mt-0.5">Monitor output quality with golden prompt evaluations</p>
+          </div>
+          <button onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-[#0a0a0a] hover:bg-[#222] text-white text-xs font-medium rounded-lg transition-colors">
+            <Plus size={12} /> New test
+          </button>
+        </div>
+
+        {tests.length === 0 ? (
+          <Card className="p-8">
+            <div className="flex flex-col items-center justify-center py-8 text-center gap-4">
+              <div className="w-10 h-10 bg-black/[0.04] rounded-xl flex items-center justify-center">
+                <FlaskConical size={18} className="text-[#ccc]" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-[#333]">No drift tests yet</p>
+                <p className="text-xs text-[#999] mt-1 max-w-xs leading-relaxed">
+                  Create a drift test with golden prompts to monitor your model's output quality over time.
+                </p>
+              </div>
+              <button onClick={() => setShowCreate(true)}
+                className="flex items-center gap-1.5 px-4 py-2 bg-[#0a0a0a] hover:bg-[#222] text-white text-xs font-medium rounded-lg transition-colors">
+                <Plus size={12} /> Create your first test
+              </button>
+            </div>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {tests.map(test => {
+              const score = test.last_score
+              const scoreColor = score === undefined ? '#ccc' : score >= 8 ? '#10b981' : score >= 6 ? '#f59e0b' : '#ef4444'
+              const alert = score !== undefined && score < 7
+              return (
+                <Card key={test.id} className={`p-5 ${alert ? 'border-red-200' : ''}`}>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2.5 mb-2 flex-wrap">
+                        <span className="text-sm font-medium text-[#0a0a0a]">{test.name}</span>
+                        {alert && <Badge variant="danger">Quality alert</Badge>}
+                        {score === undefined && <Badge variant="default">Not run yet</Badge>}
+                      </div>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <code className="text-[11px] font-mono bg-black/[0.04] px-2 py-0.5 rounded text-[#555]">{test.model}</code>
+                        <span className="text-[11px] text-[#999]">{test.golden_prompt_count ?? 0} prompts</span>
+                        <span className="text-[11px] text-[#999] capitalize">{test.schedule}</span>
+                        {test.last_run_at
+                          ? <span className="text-[11px] text-[#ccc]">Last run {timeAgo(test.last_run_at)}</span>
+                          : <span className="text-[11px] text-amber-400">Run to get your first score →</span>
+                        }
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 flex-shrink-0">
+                      {score !== undefined && (
+                        <div className="text-right">
+                          <div className="text-2xl font-semibold tabular-nums tracking-tight" style={{ color: scoreColor }}>{score.toFixed(1)}</div>
+                          <div className="text-[10px] text-[#ccc]">/ 10</div>
+                        </div>
+                      )}
+                      <button onClick={() => run(test.id)} disabled={running === test.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[#666] bg-black/[0.04] hover:bg-black/[0.07] rounded-lg transition-colors disabled:opacity-40 border border-black/[0.06]">
+                        {running === test.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                        Run
+                      </button>
+                    </div>
+                  </div>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </>
   )
 }
 
@@ -789,11 +1038,8 @@ function KeysTab({ projectId, token }: { projectId: string; token: string }) {
   )
 }
 
-// ── Settings ──────────────────────────────────────────────────────────────────
 function SettingsTab({ project, token, onProjectUpdate }: {
-  project: Project
-  token: string
-  onProjectUpdate: (p: Project) => void
+  project: Project; token: string; onProjectUpdate: (p: Project) => void
 }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -811,9 +1057,7 @@ function SettingsTab({ project, token, onProjectUpdate }: {
         alert_email: alertEmail || null,
         slack_webhook_url: slackWebhook || null,
       }, token)
-      onProjectUpdate(updated)
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
+      onProjectUpdate(updated); setSaved(true); setTimeout(() => setSaved(false), 2000)
     } catch (e: any) { alert(e.message) }
     setSaving(false)
   }
@@ -824,8 +1068,6 @@ function SettingsTab({ project, token, onProjectUpdate }: {
         <h2 className="text-sm font-semibold text-[#0a0a0a]">Settings</h2>
         <p className="text-xs text-[#999] mt-0.5">Project configuration and alert thresholds</p>
       </div>
-
-      {/* Project Info */}
       <Card>
         <div className="divide-y divide-black/[0.04]">
           {[
@@ -845,76 +1087,54 @@ function SettingsTab({ project, token, onProjectUpdate }: {
           ))}
         </div>
       </Card>
-
-      {/* Alert Thresholds */}
       <Card className="p-5">
         <h3 className="text-xs font-medium text-[#0a0a0a] mb-1">Alert Thresholds</h3>
         <p className="text-xs text-[#999] mb-4">Alert fires when metric exceeds X% above 7-day average</p>
         <div className="space-y-4">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs text-[#555]">Cost spike threshold</label>
-              <span className="text-xs font-mono font-medium text-[#0a0a0a]">{costThreshold}%</span>
+          {[
+            { label: 'Cost spike threshold', value: costThreshold, set: setCostThreshold },
+            { label: 'Latency spike threshold', value: latencyThreshold, set: setLatencyThreshold },
+          ].map(s => (
+            <div key={s.label}>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs text-[#555]">{s.label}</label>
+                <span className="text-xs font-mono font-medium text-[#0a0a0a]">{s.value}%</span>
+              </div>
+              <input type="range" min={10} max={200} step={5} value={s.value}
+                onChange={e => s.set(Number(e.target.value))}
+                className="w-full accent-black h-1 rounded-full"
+              />
+              <div className="flex justify-between text-[10px] text-[#ccc] mt-1">
+                <span>10% (sensitive)</span><span>200% (relaxed)</span>
+              </div>
             </div>
-            <input type="range" min={10} max={200} step={5}
-              value={costThreshold}
-              onChange={e => setCostThreshold(Number(e.target.value))}
-              className="w-full accent-black h-1 rounded-full"
-            />
-            <div className="flex justify-between text-[10px] text-[#ccc] mt-1">
-              <span>10% (sensitive)</span>
-              <span>200% (relaxed)</span>
-            </div>
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs text-[#555]">Latency spike threshold</label>
-              <span className="text-xs font-mono font-medium text-[#0a0a0a]">{latencyThreshold}%</span>
-            </div>
-            <input type="range" min={10} max={200} step={5}
-              value={latencyThreshold}
-              onChange={e => setLatencyThreshold(Number(e.target.value))}
-              className="w-full accent-black h-1 rounded-full"
-            />
-            <div className="flex justify-between text-[10px] text-[#ccc] mt-1">
-              <span>10% (sensitive)</span>
-              <span>200% (relaxed)</span>
-            </div>
-          </div>
+          ))}
         </div>
       </Card>
-
-      {/* Notifications */}
       <Card className="p-5">
         <h3 className="text-xs font-medium text-[#0a0a0a] mb-1">Notifications</h3>
         <p className="text-xs text-[#999] mb-4">Get notified when alerts fire</p>
         <div className="space-y-3">
           <div>
             <label className="text-xs text-[#555] block mb-1.5">Alert email</label>
-            <input type="email" placeholder="you@company.com"
-              value={alertEmail}
+            <input type="email" placeholder="you@company.com" value={alertEmail}
               onChange={e => setAlertEmail(e.target.value)}
               className="w-full px-3 py-2 text-xs bg-[#fafafa] border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a] placeholder-[#ccc]"
             />
           </div>
           <div>
             <label className="text-xs text-[#555] block mb-1.5">Slack webhook URL</label>
-            <input type="url" placeholder="https://hooks.slack.com/services/..."
-              value={slackWebhook}
+            <input type="url" placeholder="https://hooks.slack.com/services/..." value={slackWebhook}
               onChange={e => setSlackWebhook(e.target.value)}
               className="w-full px-3 py-2 text-xs bg-[#fafafa] border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a] placeholder-[#ccc]"
             />
           </div>
         </div>
       </Card>
-
-      {/* Save */}
       <button onClick={handleSave} disabled={saving}
         className="w-full h-9 bg-[#0a0a0a] hover:bg-[#222] text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
         {saving ? <Loader2 size={13} className="animate-spin" /> : saved ? <><Check size={13} /> Saved!</> : 'Save changes'}
       </button>
-
-      {/* Quick integration */}
       <Card className="p-5">
         <h3 className="text-xs font-medium text-[#0a0a0a] mb-3">Quick integration</h3>
         <div className="bg-[#0d0d0d] rounded-lg p-4 font-mono text-[11px] text-[#888] leading-relaxed">
@@ -972,7 +1192,6 @@ export default function App() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  // Update project in state after settings save
   function updateCurrentProject(updated: Project) {
     setCurrentProject(updated)
     setProjects(prev => prev.map(p => p.id === updated.id ? updated : p))
@@ -995,14 +1214,12 @@ export default function App() {
   return (
     <div className="flex min-h-screen bg-[#fafafa]" style={{ fontFamily: "'Inter', -apple-system, sans-serif" }}>
       <style>{`* { -webkit-font-smoothing: antialiased; } input:focus { outline: none; }`}</style>
-
       <Sidebar
         activeView={activeView} setActiveView={setActiveView}
         projects={projects} currentProject={currentProject}
         setCurrentProject={p => { setCurrentProject(p); setMetrics(null) }}
         alertCount={alertCount}
       />
-
       <main className="flex-1 overflow-auto min-w-0">
         <header className="sticky top-0 z-10 bg-[#fafafa]/90 backdrop-blur-md border-b border-black/[0.05] px-7 py-3.5 flex items-center justify-between">
           <div>
@@ -1030,20 +1247,15 @@ export default function App() {
             </button>
           </div>
         </header>
-
         <div className="p-7">
-          {activeView === 'overview' && (
-            <OverviewTab metrics={metrics} alerts={alerts} loading={loading} onViewAlerts={() => setActiveView('alerts')} />
-          )}
+          {activeView === 'overview' && <OverviewTab metrics={metrics} alerts={alerts} loading={loading} onViewAlerts={() => setActiveView('alerts')} />}
           {activeView === 'costs'    && <CostsTab metrics={metrics} loading={loading} />}
           {activeView === 'latency'  && <LatencyTab metrics={metrics} loading={loading} />}
           {activeView === 'models'   && <ModelsTab metrics={metrics} loading={loading} />}
           {activeView === 'drift'    && currentProject && token && <DriftTab projectId={currentProject.id} token={token} />}
           {activeView === 'alerts'   && currentProject && token && <AlertsTab projectId={currentProject.id} token={token} />}
           {activeView === 'keys'     && currentProject && token && <KeysTab projectId={currentProject.id} token={token} />}
-          {activeView === 'settings' && currentProject && token && (
-            <SettingsTab project={currentProject} token={token} onProjectUpdate={updateCurrentProject} />
-          )}
+          {activeView === 'settings' && currentProject && token && <SettingsTab project={currentProject} token={token} onProjectUpdate={updateCurrentProject} />}
         </div>
       </main>
     </div>
