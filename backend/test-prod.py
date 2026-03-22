@@ -4,7 +4,7 @@ load_dotenv()
 from llm_monitor import monitor
 
 monitor.configure(
-    api_key="lmd_KPkPqF5XE7swOcZ3LbNsnqYFw3BnGFjJ2YEGg-8ZBwU",
+    api_key="lmd_c0fdNo5AvSFTGGNbakcDEPFw49TPC5UaBxbutfyyyF4",
     project_id="f7b3f313-eb4d-4b1f-8c4f-d6f6fb957173",
     backend_url="https://innovative-learning-production-7c85.up.railway.app/v1",
 )

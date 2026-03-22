@@ -21,12 +21,17 @@ from typing import Optional
 
 import anthropic
 import openai
+from groq import Groq
 
 from ..core.config import get_settings
 from ..core.supabase import get_supabase
 from .alert_service import AlertService
 
 logger = logging.getLogger(__name__)
+
+GROQ_MODELS = (
+    "llama", "mixtral", "gemma", "whisper", "deepseek"
+)
 
 EVALUATOR_SYSTEM_PROMPT = """You are an expert LLM response quality evaluator.
 
@@ -45,6 +50,18 @@ Respond ONLY with valid JSON in this exact format:
   "score": <number 0-10>,
   "reasoning": "<one sentence explaining the score>"
 }"""
+
+
+def _is_groq_model(model: str) -> bool:
+    return any(model.lower().startswith(prefix) for prefix in GROQ_MODELS)
+
+
+def _call_groq(model: str, messages: list, api_key: Optional[str] = None) -> tuple[str, int, int]:
+    """Call Groq model. Returns (response_text, prompt_tokens, completion_tokens)."""
+    client = Groq(api_key=api_key or get_settings().groq_api_key)
+    response = client.chat.completions.create(model=model, messages=messages, max_tokens=2048)
+    text = response.choices[0].message.content or ""
+    return text, response.usage.prompt_tokens, response.usage.completion_tokens
 
 
 def _call_openai(model: str, messages: list, api_key: Optional[str] = None) -> tuple[str, int, int]:
@@ -67,16 +84,32 @@ def _call_anthropic(model: str, messages: list, system: Optional[str] = None,
     return text, response.usage.input_tokens, response.usage.output_tokens
 
 
+def _call_model(model: str, messages: list, project: dict = None) -> tuple[str, int, int]:
+    """Route to correct provider based on model name."""
+    openai_key = (project or {}).get("openai_api_key") or get_settings().openai_api_key
+    groq_key = (project or {}).get("groq_api_key") or get_settings().groq_api_key
+    anthropic_key = (project or {}).get("anthropic_api_key") or get_settings().anthropic_api_key
+
+    if model.startswith("claude-"):
+        if not anthropic_key:
+            raise ValueError("Anthropic API key not configured. Please add it in Settings.")
+        return _call_anthropic(model, messages, api_key=anthropic_key)
+    elif _is_groq_model(model):
+        if not groq_key:
+            raise ValueError("Groq API key not configured. Please add it in Settings.")
+        return _call_groq(model, messages, api_key=groq_key)
+    else:
+        if not openai_key:
+            raise ValueError("OpenAI API key not configured. Please add it in Settings.")
+        return _call_openai(model, messages, api_key=openai_key)
+
 def _evaluate_response(
     prompt: str,
     response: str,
     expected_response: Optional[str],
     evaluator_model: str,
+    project: dict = None,
 ) -> tuple[float, str]:
-    """
-    Use an evaluator LLM to score the response quality.
-    Returns (score 0-10, reasoning).
-    """
     eval_messages = [
         {
             "role": "user",
@@ -90,12 +123,24 @@ def _evaluate_response(
     ]
 
     try:
+        groq_key = (project or {}).get("groq_api_key") or get_settings().groq_api_key
+        anthropic_key = (project or {}).get("anthropic_api_key") or get_settings().anthropic_api_key
+        openai_key = (project or {}).get("openai_api_key") or get_settings().openai_api_key
+
         if evaluator_model.startswith("claude-"):
-            text, _, _ = _call_anthropic(evaluator_model, eval_messages, EVALUATOR_SYSTEM_PROMPT)
-        else:
-            # Inject system into messages for OpenAI
+            if not anthropic_key:
+                raise ValueError("Anthropic API key not configured. Please add it in Settings.")
+            text, _, _ = _call_anthropic(evaluator_model, eval_messages, EVALUATOR_SYSTEM_PROMPT, api_key=anthropic_key)
+        elif _is_groq_model(evaluator_model):
+            if not groq_key:
+                raise ValueError("Groq API key not configured. Please add it in Settings.")
             eval_messages = [{"role": "system", "content": EVALUATOR_SYSTEM_PROMPT}] + eval_messages
-            text, _, _ = _call_openai(evaluator_model, eval_messages)
+            text, _, _ = _call_groq(evaluator_model, eval_messages, api_key=groq_key)
+        else:
+            if not openai_key:
+                raise ValueError("OpenAI API key not configured. Please add it in Settings.")
+            eval_messages = [{"role": "system", "content": EVALUATOR_SYSTEM_PROMPT}] + eval_messages
+            text, _, _ = _call_openai(evaluator_model, eval_messages, api_key=openai_key)
 
         result = json.loads(text.strip())
         score = float(result["score"])
@@ -119,7 +164,6 @@ class DriftDetectionService:
         Execute a drift test and store results.
         Returns the result record or None on failure.
         """
-        # Fetch test config
         test_result = (
             self.supabase.table("drift_tests")
             .select("*")
@@ -127,6 +171,7 @@ class DriftDetectionService:
             .eq("is_active", True)
             .maybe_single()
             .execute()
+
         )
         if not test_result.data:
             logger.error(f"Drift test {drift_test_id} not found")
@@ -139,7 +184,6 @@ class DriftDetectionService:
             logger.warning(f"Drift test {drift_test_id} has no golden prompts")
             return None
 
-        # Fetch project for threshold
         project = (
             self.supabase.table("projects")
             .select("quality_score_threshold, owner_id")
@@ -152,7 +196,6 @@ class DriftDetectionService:
 
         prompt_results = []
         total_tokens = 0
-        total_cost = 0.0
         weighted_score_sum = 0.0
         total_weight = 0.0
 
@@ -162,22 +205,17 @@ class DriftDetectionService:
             expected = golden.get("expected_response")
             weight = golden.get("weight", 1.0)
 
-            # Call target model
             try:
                 messages = [{"role": "user", "content": prompt_text}]
-                if test["model"].startswith("claude-"):
-                    actual_response, pt, ct = _call_anthropic(test["model"], messages)
-                else:
-                    actual_response, pt, ct = _call_openai(test["model"], messages)
-
+                actual_response, pt, ct = _call_model(test["model"], messages, project)
                 total_tokens += pt + ct
 
-                # Evaluate quality
                 score, reasoning = _evaluate_response(
                     prompt=prompt_text,
                     response=actual_response,
                     expected_response=expected,
                     evaluator_model=test["evaluator_model"],
+                    project=project,
                 )
 
                 prompt_results.append({
@@ -206,12 +244,10 @@ class DriftDetectionService:
                     "status": "error",
                 })
 
-        # Compute overall score
         overall_score = (weighted_score_sum / total_weight) if total_weight > 0 else 0.0
         baseline_score = test.get("baseline_score")
         score_delta = (overall_score - baseline_score) if baseline_score is not None else None
 
-        # If no baseline yet, set it
         if baseline_score is None:
             self.supabase.table("drift_tests").update(
                 {"baseline_score": overall_score}
@@ -219,11 +255,9 @@ class DriftDetectionService:
             baseline_score = overall_score
             score_delta = 0.0
 
-        # Check if alert should trigger
         threshold = project["quality_score_threshold"] if project else 7.0
         alert_triggered = overall_score < threshold
 
-        # Store result
         result_record = {
             "id": str(uuid.uuid4()),
             "drift_test_id": drift_test_id,
@@ -240,13 +274,11 @@ class DriftDetectionService:
 
         self.supabase.table("drift_test_results").insert(result_record).execute()
 
-        # Update last_run info on test
         self.supabase.table("drift_tests").update({
             "last_run_at": result_record["run_at"],
             "last_score": round(overall_score, 2),
         }).eq("id", drift_test_id).execute()
 
-        # Trigger alert if quality degraded
         if alert_triggered:
             self.alert_service.create_quality_alert(
                 project_id=test["project_id"],
@@ -280,4 +312,3 @@ class DriftDetectionService:
                 self.run_drift_test(test["id"])
             except Exception as e:
                 logger.error(f"Failed drift test {test['id']} ({test['name']}): {e}")
-

@@ -107,6 +107,9 @@ export interface Project {
   cost_alert_threshold_pct?: number
   latency_alert_threshold_pct?: number
   quality_score_threshold?: number
+  openai_api_key?: string
+  groq_api_key?: string
+  anthropic_api_key?: string
 }
 
 export interface CreateProjectInput {
@@ -130,6 +133,9 @@ export interface UpdateProjectInput {
   cost_alert_threshold_pct?: number
   latency_alert_threshold_pct?: number
   quality_score_threshold?: number
+  openai_api_key?: string | null
+  groq_api_key?: string | null
+  anthropic_api_key?: string | null
 }
 
 export interface MetricsSummary {

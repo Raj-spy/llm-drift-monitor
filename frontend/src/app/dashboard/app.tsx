@@ -548,12 +548,15 @@ const MODELS = [
   { label: 'Claude 3.5 Haiku', value: 'claude-3-5-haiku-20241022' },
   { label: 'Claude 3.5 Sonnet', value: 'claude-sonnet-4-5' },
   { label: 'Claude 3 Opus', value: 'claude-opus-4-5' },
+  { label: 'Llama 3.1 8B (Groq - Free)', value: 'llama-3.1-8b-instant' },
+{ label: 'Llama 3.3 70B (Groq - Free)', value: 'llama-3.3-70b-versatile' },
 ]
 
 const EVALUATOR_MODELS = [
   { label: 'Claude 3.5 Haiku (fast, cheap)', value: 'claude-3-5-haiku-20241022' },
   { label: 'Claude 3.5 Sonnet (balanced)', value: 'claude-sonnet-4-5' },
   { label: 'GPT-4o mini', value: 'gpt-4o-mini' },
+  { label: 'Llama 3.1 8B - Groq (Free)', value: 'llama-3.1-8b-instant' },
 ]
 
 const SCHEDULES = [
@@ -1047,6 +1050,9 @@ function SettingsTab({ project, token, onProjectUpdate }: {
   const [latencyThreshold, setLatencyThreshold] = useState(project.latency_alert_threshold_pct ?? 50)
   const [alertEmail, setAlertEmail] = useState(project.alert_email ?? '')
   const [slackWebhook, setSlackWebhook] = useState(project.slack_webhook_url ?? '')
+  const [openaiKey, setOpenaiKey] = useState(project.openai_api_key ?? '')
+  const [groqKey, setGroqKey] = useState(project.groq_api_key ?? '')
+  const [anthropicKey, setAnthropicKey] = useState(project.anthropic_api_key ?? '')
 
   async function handleSave() {
     setSaving(true)
@@ -1056,6 +1062,9 @@ function SettingsTab({ project, token, onProjectUpdate }: {
         latency_alert_threshold_pct: latencyThreshold,
         alert_email: alertEmail || null,
         slack_webhook_url: slackWebhook || null,
+        openai_api_key: openaiKey || null,      // ← yeh add karo
+        groq_api_key: groqKey || null,          // ← yeh add karo
+        anthropic_api_key: anthropicKey || null, // ← yeh add karo
       }, token)
       onProjectUpdate(updated); setSaved(true); setTimeout(() => setSaved(false), 2000)
     } catch (e: any) { alert(e.message) }
@@ -1131,6 +1140,33 @@ function SettingsTab({ project, token, onProjectUpdate }: {
           </div>
         </div>
       </Card>
+      <Card className="p-5">
+  <h3 className="text-xs font-medium text-[#0a0a0a] mb-1">LLM Provider Keys</h3>
+  <p className="text-xs text-[#999] mb-4">Your keys are used for drift tests — never shared</p>
+  <div className="space-y-3">
+    <div>
+      <label className="text-xs text-[#555] block mb-1.5">OpenAI API Key</label>
+      <input type="password" placeholder="sk-..."
+        value={openaiKey} onChange={e => setOpenaiKey(e.target.value)}
+        className="w-full px-3 py-2 text-xs bg-[#fafafa] border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a] placeholder-[#ccc]"
+      />
+    </div>
+    <div>
+      <label className="text-xs text-[#555] block mb-1.5">Groq API Key</label>
+      <input type="password" placeholder="gsk-..."
+        value={groqKey} onChange={e => setGroqKey(e.target.value)}
+        className="w-full px-3 py-2 text-xs bg-[#fafafa] border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a] placeholder-[#ccc]"
+      />
+    </div>
+    <div>
+      <label className="text-xs text-[#555] block mb-1.5">Anthropic API Key</label>
+      <input type="password" placeholder="sk-ant-..."
+        value={anthropicKey} onChange={e => setAnthropicKey(e.target.value)}
+        className="w-full px-3 py-2 text-xs bg-[#fafafa] border border-black/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10 text-[#0a0a0a] placeholder-[#ccc]"
+      />
+    </div>
+  </div>
+</Card>
       <button onClick={handleSave} disabled={saving}
         className="w-full h-9 bg-[#0a0a0a] hover:bg-[#222] text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
         {saving ? <Loader2 size={13} className="animate-spin" /> : saved ? <><Check size={13} /> Saved!</> : 'Save changes'}
