@@ -418,11 +418,10 @@ async def run_drift_test(
     project: dict = Depends(verify_project_access),
 ):
     svc = DriftDetectionService()
-    result = svc.run_drift_test(test_id)
+    result = svc.run_drift_test(test_id, project=project)  # ← project pass karo
     if not result:
         raise HTTPException(status_code=404, detail="Drift test not found or failed")
     return DriftResultResponse(**result)
-
 
 @router.get("/projects/{project_id}/drift-tests/{test_id}/results", response_model=list[DriftResultResponse])
 async def get_drift_results(

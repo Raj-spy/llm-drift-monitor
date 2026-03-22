@@ -159,7 +159,7 @@ class DriftDetectionService:
         self.supabase = get_supabase()
         self.alert_service = AlertService()
 
-    def run_drift_test(self, drift_test_id: str) -> Optional[dict]:
+    def run_drift_test(self, drift_test_id: str, project: dict = None) -> Optional[dict]:
         """
         Execute a drift test and store results.
         Returns the result record or None on failure.
@@ -183,13 +183,13 @@ class DriftDetectionService:
         if not golden_prompts:
             logger.warning(f"Drift test {drift_test_id} has no golden prompts")
             return None
-
-        project = (
-            self.supabase.table("projects")
-            .select("quality_score_threshold, owner_id")
-            .eq("id", test["project_id"])
-            .maybe_single()
-            .execute()
+        if project is None:
+         project = (
+        self.supabase.table("projects")
+        .select("*")
+        .eq("id", test["project_id"])
+        .maybe_single()
+        .execute()
         ).data
 
         logger.info(f"Running drift test '{test['name']}' with {len(golden_prompts)} prompts")
