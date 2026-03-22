@@ -101,6 +101,7 @@ async def update_project(
         "alert_email", "slack_webhook_url",
         "cost_alert_threshold_pct", "latency_alert_threshold_pct",
         "quality_score_threshold",
+        "openai_api_key", "groq_api_key", "anthropic_api_key",
     }
     updates = {k: v for k, v in body.items() if k in allowed}
 

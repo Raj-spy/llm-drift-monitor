@@ -76,6 +76,9 @@ class ProjectResponse(BaseModel):
     cost_alert_threshold_pct: Optional[float] = None
     latency_alert_threshold_pct: Optional[float] = None
     quality_score_threshold: Optional[float] = None
+    openai_api_key: Optional[str] = None      # ← add karo
+    groq_api_key: Optional[str] = None        # ← add karo
+    anthropic_api_key: Optional[str] = None   # ← add karo
 
 
 # ─── API Key Models ───────────────────────────────────────────────────────────
