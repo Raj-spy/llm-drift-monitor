@@ -73,7 +73,7 @@ def test_monitor_configure():
     from llm_monitor.monitor import LLMMonitor
     m = LLMMonitor()
     with patch.object(m, "_flusher", None):
-        with patch("llm_monitor.monitor.BatchFlusher") as MockFlusher:
+        with patch("llm_monitor.monitor.BatchFlusher", autospec=True) as MockFlusher:
             MockFlusher.return_value = MagicMock()
             m.configure(api_key="lmd_test123", project_id="proj-abc")
             assert m._configured
