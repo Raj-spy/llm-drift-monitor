@@ -118,8 +118,9 @@ jobs:
         with:
           context: ./backend
           push: true
-          tags: rajspy/llm-backend:sha-${{ github.sha }}
-                rajspy/llm-backend:latest
+          tags: | 
+            rajspy/llm-backend:sha-${{ github.sha }}
+            rajspy/llm-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -128,8 +129,9 @@ jobs:
         with:
           context: ./frontend
           push: true
-          tags: rajspy/llm-frontend:sha-${{ github.sha }}
-                rajspy/llm-frontend:latest
+          tags: |
+            rajspy/llm-frontend:sha-${{ github.sha }}
+            rajspy/llm-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max    
 
