@@ -31,12 +31,12 @@ jobs:
         run: pip install -r requirements.txt pytest pytest-asyncio
 
       - name: Run tests
-  env:
-    PYTHONPATH: ./backend
-    SUPABASE_URL: https://test.supabase.co
-    SUPABASE_SERVICE_KEY: test-key
-    SUPABASE_ANON_KEY: test-anon
-  run: pytest tests/ -v --tb=short
+        env:
+          PYTHONPATH: ./backend
+          SUPABASE_URL: https://test.supabase.co
+          SUPABASE_SERVICE_KEY: test-key
+          SUPABASE_ANON_KEY: test-anon
+        run: pytest tests/ -v --tb=short
 
   # ── SDK Tests ─────────────────────────────────────────────────
   test-sdk:
