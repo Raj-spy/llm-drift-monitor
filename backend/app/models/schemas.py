@@ -3,8 +3,7 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
-
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ─── Ingestion Models ─────────────────────────────────────────────────────────
 
@@ -36,10 +35,16 @@ class IngestEvent(BaseModel):
         if v not in ("success", "error", "timeout"):
             raise ValueError(f"Invalid status: {v}")
         return v
+    
+    @model_validator(mode='after')
+    def compute_total_tokens(self) -> 'IngestEvent':
+        if self.total_tokens == 0 and (self.prompt_tokens or self.completion_tokens):
+            self.total_tokens = self.prompt_tokens + self.completion_tokens
+        return self
 
 
 class IngestBatchRequest(BaseModel):
-    events: list[IngestEvent] = Field(..., max_length=10000)
+    events: list[IngestEvent] = Field(..., max_length=500)
 
 
 class IngestResponse(BaseModel):
