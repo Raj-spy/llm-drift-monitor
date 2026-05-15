@@ -73,7 +73,7 @@ export default function LoginPage() {
           </div>
 
           <h2 className="text-[38px] font-semibold text-white leading-tight tracking-[-1.5px] mb-5">
-            "CI/CD Auto Deploy Working 🚀" for<br />your LLM APIs.
+            Monitoriing for<br />your LLM APIs.
           </h2>
           <p className="text-[#666] text-[15px] leading-relaxed mb-14">
             Track costs, latency, and quality drift across every API call — integrated in three lines of code.
