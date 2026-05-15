@@ -211,3 +211,20 @@ jobs:
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+
+# Deploy to EC2
+  deploy:
+  needs: docker
+  runs-on: ubuntu-latest
+
+  steps:
+    - name: Deploy to EC2
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ubuntu
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          cd /home/ubuntu
+          docker compose pull
+          docker compose up -d      
