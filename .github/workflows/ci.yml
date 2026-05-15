@@ -122,6 +122,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build and push Frontend image  # ← YE ADD KARO
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: rajspy/llm-frontend:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max    
+
   # ── Deploy Backend ────────────────────────────────────────────
   deploy-backend:
     name: Deploy Backend
