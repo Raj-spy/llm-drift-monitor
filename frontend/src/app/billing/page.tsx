@@ -1,6 +1,6 @@
-export const dynamic = 'force-dynamic'
-
 'use client'
+
+export const dynamic = 'force-dynamic'
 
 import { useState } from 'react'
 import { Check, Sparkles, Zap, Building2, ArrowRight } from 'lucide-react'
@@ -197,4 +197,5 @@ export default function BillingPage() {
     </div>
   )
 }
+
 
