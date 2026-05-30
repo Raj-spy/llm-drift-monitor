@@ -136,7 +136,7 @@ jobs:
             rajspy/llm-frontend:latest
 
         build-args: | 
-         NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }} NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }} NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}  
+           NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }} NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }} NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}  
 
         cache-from: type=gha
         cache-to: type=gha,mode=max
