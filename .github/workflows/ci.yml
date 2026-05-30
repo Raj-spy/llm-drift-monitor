@@ -83,7 +83,7 @@ jobs:
 
       - name: Build frontend
         working-directory: ./frontend
-        build-args: |
+        env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
@@ -134,8 +134,12 @@ jobs:
           tags: |
             rajspy/llm-frontend:sha-${{ github.sha }}
             rajspy/llm-frontend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+
+        build-args: | 
+         NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }} NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }} NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}  
+
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
 
   # ── Auto Deploy To EC2 ───────────────────────────────────────
