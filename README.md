@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://python.org)
 [![Next.js 14](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org)
-[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://llm-drift-monitor-pi.vercel.app)
+[![Status: Backend Paused](https://img.shields.io/badge/backend-paused%20(Railway%20free%20tier)-orange)](https://github.com/Raj-spy/llm-drift-monitor)
 
 ---
 
