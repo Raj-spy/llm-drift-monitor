@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: frontend
+  namespace: llm-monitor
+
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+
+  template:
+    metadata:
+      labels:
+        app: frontend
+        
+    spec:
+      containers:
+      - name: frontend
+        image: llm-frontend:latest
+
+        imagePullPolicy: Never
+
+        ports:
+        - containerPort: 3000
+
+        env:
+          - name: NEXT_PUBLIC_API_URL
+            valueFrom:
+              configMapKeyRef:
+                name: frontend-config
+                key: NEXT_PUBLIC_API_URL
+
+        resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
