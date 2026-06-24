@@ -6,7 +6,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # Fixed configuration to ignore extra .env values and suppress 'model_' namespace warnings
+    model_config = SettingsConfigDict(
+        env_file=".env", 
+        env_file_encoding="utf-8",
+        extra="ignore",                   # <-- Ignores fields like platform_openai_api_key
+        protected_namespaces=()           # <-- Fixes the Pydantic 'model_' namespace warnings
+    )
 
     # ── Supabase ─────────────────────────────────────────────────────
     supabase_url: str
