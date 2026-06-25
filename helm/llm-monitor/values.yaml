@@ -1,0 +1,46 @@
+namespace: llm-monitor
+
+# backend configuration
+backend:
+  replicaCount: 1
+
+  image:
+    repository: llm-backend
+    tag: latest
+    pullPolicy: Never
+
+
+  service:
+   type: ClusterIP
+   port: 8000
+
+# frontend configuration
+
+frontend:
+  replicaCount: 1
+
+  image:
+    repository: llm-frontend
+    tag: latest
+    pullPolicy: Never
+
+  service:
+    type: ClusterIP
+    port: 3000
+
+# ingress configuration 
+
+ingress:
+ enabled: true
+ className: nginx
+ host: llm-monitor.local
+
+ path: /
+
+# secrets configuration
+
+secrets:
+  supabaseUrl: "CHANGE_ME"
+  supabaseServiceKey: "CHANGE_ME"
+  supabaseAnonKey: "CHANGE_ME"
+  secretKey: "CHANGE_ME"
