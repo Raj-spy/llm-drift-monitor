@@ -3,7 +3,10 @@ kind: Ingress
 
 metadata:
   name: llm-monitor-ingress
-  namespace: {{ .Values.namespace }}
+  namespace: {{ include "llm-monitor.namespace" . }}
+
+  labels:
+    {{- include "llm-monitor.labels" . | nindent 4 }}
 
 spec:
   ingressClassName: {{ .Values.ingress.className }}

@@ -3,7 +3,10 @@ kind: Deployment
 
 metadata:
   name: frontend
-  namespace: {{.Values.namespace }}
+  namespace: {{ include "llm-monitor.namespace" . }}
+
+  labels:
+    {{- include "llm-monitor.labels" . | nindent 4 }}
 
 spec:
   replicas: {{.Values.frontend.replicaCount }}

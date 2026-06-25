@@ -3,7 +3,10 @@ kind: Service
 
 metadata:
   name: backend-service
-  namespace: {{.Values.namespace }}
+  namespace: {{ include "llm-monitor.namespace" . }}
+
+  labels:
+    {{ include "llm-monitor.labels" . | nindent 4 }}
 spec:
   selector:
     app: backend
