@@ -60,3 +60,10 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Return application namespace
+*/}}
+{{- define "llm-monitor.namespace" -}}
+{{- .Values.namespace -}}
+{{- end }}
