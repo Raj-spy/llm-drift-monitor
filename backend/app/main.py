@@ -27,9 +27,10 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown lifecycle."""
     settings = get_settings()
     logger.info(f"Starting LLM Drift Monitor API [{settings.app_env}]")
+    yield
+    logger.info("Shutting down")
 
     if settings.enable_drift_scheduler:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler

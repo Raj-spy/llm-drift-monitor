@@ -2,7 +2,7 @@ namespace: llm-monitor
 
 # backend configuration
 backend:
-  replicaCount: 1
+  replicaCount: 2
 
   image:
     repository: llm-backend
@@ -40,7 +40,7 @@ ingress:
 # secrets configuration
 
 secrets:
-  supabaseUrl: "CHANGE_ME"
-  supabaseServiceKey: "CHANGE_ME"
-  supabaseAnonKey: "CHANGE_ME"
-  secretKey: "CHANGE_ME"
+  supabaseUrl: "https://ysmmsypyvzaxcktsadtx.supabase.co"
+  supabaseServiceKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzbW1zeXB5dnpheGNrdHNhZHR4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mjk3MTY1NiwiZXhwIjoyMDg4NTQ3NjU2fQ.pvsL1YSSZqie-knWUr55rXyvLPhWIDXXSfaoKr4Izo4"
+  supabaseAnonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzbW1zeXB5dnpheGNrdHNhZHR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5NzE2NTYsImV4cCI6MjA4ODU0NzY1Nn0.aSpFy_CDxBjXRbIX-5u2MaopRdud5HMVvkG_ki4UpOI"
+  secretKey: "dev-secret-key-change-in-prod-use-openssl-rand-hex-32"
