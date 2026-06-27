@@ -1,0 +1,17 @@
+backend:
+  replicaCount: 2
+
+
+frontend:
+  replicaCount: 2
+
+ingress:
+  host: llm-monitor.local
+
+# secrets configuration
+
+secrets:
+  supabaseUrl: ""
+  supabaseServiceKey: ""
+  supabaseAnonKey: ""
+  secretKey: ""
