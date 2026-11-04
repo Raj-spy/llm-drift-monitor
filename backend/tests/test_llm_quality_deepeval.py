@@ -1,16 +1,8 @@
 ﻿"""
-LLM quality tests using DeepEval (LLM-as-a-judge).
+LLM quality tests using DeepEvaL
 
-Provider is picked automatically:
-  GROQ_API_KEY set       -> Groq (target model + judge)
-  ANTHROPIC_API_KEY set  -> Claude (target model + judge)
-  EVAL_FAKE=1            -> canned answers + rule-based fake judge (wiring check only,
-                            says NOTHING about real model quality)
-  none of the above      -> tests are skipped (so the normal CI test job never breaks)
-
-Env vars (optional): EVAL_TARGET_MODEL, EVAL_JUDGE_MODEL
-Defaults: groq -> openai/gpt-oss-120b, anthropic -> claude-haiku-5-5
 """
+
 import json
 import os
 
