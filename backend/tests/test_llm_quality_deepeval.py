@@ -1,0 +1,189 @@
+"""
+LLM response quality tests, written with DeepEval.
+
+What this checks
+  1. Golden prompts: a target model answers a fixed set of prompts and DeepEval
+     scores each answer for correctness (against an expected answer) and relevancy.
+  2. Negative control: a deliberately wrong answer must FAIL the correctness
+     metric, which proves the evaluator can actually catch a quality drop.
+
+Run locally:
+    pip install deepeval anthropic pytest
+    cd backend
+    ANTHROPIC_API_KEY=sk-... pytest tests/test_llm_quality_deepeval.py -v
+
+Skipped automatically when deepeval is not installed or ANTHROPIC_API_KEY is
+not set, so the normal backend test job is never affected.
+"""
+import json
+import os
+
+import pytest
+
+pytest.importorskip("deepeval")
+anthropic = pytest.importorskip("anthropic")
+
+from deepeval.metrics import AnswerRelevancyMetric, GEval
+from deepeval.models import DeepEvalBaseLLM
+from deepeval.test_case import LLMTestCase
+
+try:  # newer DeepEval
+    from deepeval.test_case import SingleTurnParams as Params
+except ImportError:  # older DeepEval
+    from deepeval.test_case import LLMTestCaseParams as Params
+
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+TARGET_MODEL = os.getenv("EVAL_TARGET_MODEL", "claude-haiku-5-5")  # model being tested
+JUDGE_MODEL = os.getenv("EVAL_JUDGE_MODEL", "claude-haiku-5-5")    # model that scores it
+
+pytestmark = pytest.mark.skipif(
+    not ANTHROPIC_API_KEY,
+    reason="ANTHROPIC_API_KEY not set - LLM quality evals skipped",
+)
+
+# ─── Golden dataset ───────────────────────────────────────────────────────────
+
+GOLDEN_CASES = [
+    {
+        "id": "capital-france",
+        "input": "What is the capital of France?",
+        "expected_output": "The capital of France is Paris.",
+    },
+    {
+        "id": "kubernetes-definition",
+        "input": "Explain in one sentence what Kubernetes is.",
+        "expected_output": (
+            "Kubernetes is an open-source platform that automates deploying, "
+            "scaling and managing containerized applications."
+        ),
+    },
+    {
+        "id": "http-404",
+        "input": "What does HTTP status code 404 mean?",
+        "expected_output": "It means the requested resource was not found on the server.",
+    },
+    {
+        "id": "python-square",
+        "input": "Write a Python function that returns the square of a number.",
+        "expected_output": "A Python function that takes a number and returns it multiplied by itself, for example: def square(x): return x * x",
+    },
+    {
+        "id": "process-vs-thread",
+        "input": "What is the difference between a process and a thread?",
+        "expected_output": (
+            "A process is an independent program with its own memory space, "
+            "while threads run inside a process and share its memory."
+        ),
+    },
+]
+
+# ─── Judge model (Claude) ─────────────────────────────────────────────────────
+
+
+def _extract_json(text: str) -> dict:
+    """Pull the first JSON object out of a model reply (handles ``` fences)."""
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end == -1:
+        raise ValueError(f"Judge did not return JSON: {text[:200]!r}")
+    return json.loads(text[start : end + 1])
+
+
+class ClaudeJudge(DeepEvalBaseLLM):
+    """Lets DeepEval use Claude (instead of OpenAI) as the scoring model."""
+
+    def __init__(self, model_name: str = JUDGE_MODEL):
+        self.model_name = model_name
+        super().__init__(model_name)
+
+    def load_model(self):
+        return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+    def _complete(self, prompt: str) -> str:
+        reply = self.load_model().messages.create(
+            model=self.model_name,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return reply.content[0].text if reply.content else ""
+
+    def generate(self, prompt: str, schema=None):
+        text = self._complete(prompt)
+        if schema is not None:
+            return schema(**_extract_json(text))
+        return text
+
+    async def a_generate(self, prompt: str, schema=None):
+        return self.generate(prompt, schema=schema)
+
+    def get_model_name(self) -> str:
+        return self.model_name
+
+
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def ask_target_model(prompt: str) -> str:
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    reply = client.messages.create(
+        model=TARGET_MODEL,
+        max_tokens=512,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return reply.content[0].text if reply.content else ""
+
+
+def correctness_metric(judge: ClaudeJudge) -> GEval:
+    return GEval(
+        name="Correctness",
+        criteria=(
+            "Decide whether the actual output is factually correct and consistent "
+            "with the expected output. Penalise wrong facts and missing key points."
+        ),
+        evaluation_params=[Params.INPUT, Params.ACTUAL_OUTPUT, Params.EXPECTED_OUTPUT],
+        model=judge,
+        threshold=0.6,
+    )
+
+
+@pytest.fixture(scope="module")
+def judge() -> ClaudeJudge:
+    return ClaudeJudge()
+
+
+# ─── Tests ────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("case", GOLDEN_CASES, ids=[c["id"] for c in GOLDEN_CASES])
+def test_golden_prompt_quality(case, judge):
+    """The target model's answer must be correct and relevant for each golden prompt."""
+    test_case = LLMTestCase(
+        input=case["input"],
+        actual_output=ask_target_model(case["input"]),
+        expected_output=case["expected_output"],
+    )
+    correctness = correctness_metric(judge)
+    relevancy = AnswerRelevancyMetric(threshold=0.7, model=judge)
+
+    correctness.measure(test_case)
+    relevancy.measure(test_case)
+
+    assert correctness.is_successful(), (
+        f"Correctness {correctness.score:.2f} < {correctness.threshold}: {correctness.reason}"
+    )
+    assert relevancy.is_successful(), (
+        f"Relevancy {relevancy.score:.2f} < {relevancy.threshold}: {relevancy.reason}"
+    )
+
+
+def test_evaluator_catches_a_wrong_answer(judge):
+    """Negative control: a wrong answer must fail correctness, otherwise the eval is useless."""
+    test_case = LLMTestCase(
+        input="What is the capital of France?",
+        actual_output="The capital of France is Berlin.",
+        expected_output="The capital of France is Paris.",
+    )
+    correctness = correctness_metric(judge)
+    correctness.measure(test_case)
+    assert not correctness.is_successful(), (
+        f"Evaluator gave a wrong answer {correctness.score:.2f} - it is not catching quality drops"
+    )

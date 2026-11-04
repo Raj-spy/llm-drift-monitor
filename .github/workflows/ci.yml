@@ -37,6 +37,30 @@ jobs:
           SUPABASE_ANON_KEY: test-anon
         run: pytest backend/tests/ -v --tb=short
 
+  # ── LLM Quality Evals (DeepEval) ──────────────────────────────
+  llm-quality-eval:
+    name: LLM Quality Evals (DeepEval)
+    runs-on: ubuntu-latest
+    continue-on-error: true   # report quality, never block a deploy
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install eval dependencies
+        run: pip install deepeval anthropic pytest
+
+      - name: Run LLM quality tests
+        working-directory: ./backend
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
+        run: pytest tests/test_llm_quality_deepeval.py -v --tb=short
+
   # ── SDK Tests ─────────────────────────────────────────────────
   test-sdk:
     name: SDK Tests
@@ -149,4 +173,3 @@ jobs:
             cd /home/ubuntu
             docker compose pull
             docker compose up -d
-
