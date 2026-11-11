@@ -22,8 +22,8 @@ export default function LoginPage() {
   const router = useRouter()
 
   useEffect(() => {
-    if (user) router.replace('/dashboard')
-  }, [user])
+    if (user) router.replace('/onboarding')
+  }, [user, router])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -33,7 +33,7 @@ export default function LoginPage() {
       if (mode === 'login') {
         const { error } = await signIn(email, password)
         if (error) { setError(error.message); return }
-        router.push('/dashboard')
+        router.replace('/onboarding')
       } else {
         const { error } = await signUp(email, password, fullName)
         if (error) { setError(error.message); return }
@@ -253,4 +253,3 @@ export default function LoginPage() {
     </div>
   )
 }
-

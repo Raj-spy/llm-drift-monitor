@@ -2,9 +2,9 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, Check, Copy, ExternalLink, Sparkles } from 'lucide-react'
+import { ArrowRight, Check, Copy, ExternalLink, Loader2, LogOut, Sparkles } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { projectsApi, apiKeysApi } from '@/lib/api'
 
@@ -14,42 +14,100 @@ type Stack = 'python' | 'nodejs' | 'api'
 
 export default function OnboardingPage() {
   const [step, setStep] = useState(0)
+  const [checkingAccount, setCheckingAccount] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [accountError, setAccountError] = useState('')
   const [copied, setCopied] = useState<string | null>(null)
   const [stack, setStack] = useState<Stack>('python')
 
   const [projectName, setProjectName] = useState('')
   const [environment, setEnvironment] = useState('production')
-  const [model, setModel] = useState('')
+  const [model, setModel] = useState('gpt-4o')
 
   const [projectId, setProjectId] = useState('')
   const [apiKey, setApiKey] = useState('')
 
-  const { token } = useAuth()
+  const { token, user, loading: authLoading, signOut } = useAuth()
   const router = useRouter()
+  const backendBaseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/v1').replace(/\/+$/, '')
+
+  useEffect(() => {
+    if (authLoading) return
+    if (!user || !token) {
+      router.replace('/login')
+      return
+    }
+
+    let active = true
+    setCheckingAccount(true)
+    setAccountError('')
+    projectsApi.list(token)
+      .then(projects => {
+        if (active && projects.length > 0) router.replace('/dashboard')
+      })
+      .catch(() => {
+        if (active) setAccountError('We couldn’t check your projects. Please try again.')
+      })
+      .finally(() => {
+        if (active) setCheckingAccount(false)
+      })
+
+    return () => { active = false }
+  }, [authLoading, user, token, router])
 
   function copy(text: string, id: string) {
     navigator.clipboard.writeText(text)
-    setCopied(id)
-    setTimeout(() => setCopied(null), 2000)
+      .then(() => {
+        setCopied(id)
+        setTimeout(() => setCopied(null), 2000)
+      })
+      .catch(() => setError('Clipboard access failed. Please copy the text manually.'))
   }
 
   async function handleCreateProject() {
     if (!projectName.trim()) { setError('Project name is required'); return }
+    if (!token) { setError('Your session expired. Please sign in again.'); router.replace('/login'); return }
     setError('')
     setLoading(true)
     try {
-      const project = await projectsApi.create({ name: projectName, environment, default_model: model || 'gpt-4o' }, token!)
-      setProjectId(project.id)
-      const key = await apiKeysApi.create(project.id, { name: 'Default Key' }, token!)
+      let id = projectId
+      if (!id) {
+        const project = await projectsApi.create({ name: projectName.trim(), environment, default_model: model.trim() || 'gpt-4o' }, token)
+        id = project.id
+        setProjectId(id)
+      }
+      const key = await apiKeysApi.create(id, { name: 'Default Key' }, token)
       setApiKey(key.full_key || '')
       setStep(1)
     } catch (e: any) {
-      setError(e.message)
+      setError(e instanceof Error ? e.message : 'Project setup failed. Please try again.')
     } finally {
       setLoading(false)
     }
+  }
+
+  if (authLoading || checkingAccount) {
+    return (
+      <div className="min-h-screen bg-[#fafafa] flex items-center justify-center" role="status" aria-live="polite">
+        <Loader2 className="animate-spin text-[#666]" size={20} />
+        <span className="sr-only">Checking your account</span>
+      </div>
+    )
+  }
+
+  if (accountError) {
+    return (
+      <div className="min-h-screen bg-[#fafafa] flex items-center justify-center p-6">
+        <div className="w-full max-w-sm rounded-xl border border-black/[0.08] bg-white p-6 text-center">
+          <p className="text-sm font-medium text-[#0a0a0a]">Couldn’t load your projects</p>
+          <p className="mt-2 text-sm text-[#777]">{accountError}</p>
+          <button onClick={() => window.location.reload()} className="mt-5 rounded-lg bg-[#0a0a0a] px-4 py-2 text-sm font-medium text-white">
+            Try again
+          </button>
+        </div>
+      </div>
+    )
   }
 
 const pythonInstall = `pip install llm-monitor python-dotenv`
@@ -62,7 +120,7 @@ from llm_monitor import monitor
 monitor.configure(
     api_key="${apiKey || 'lmd_your_key_here'}",
     project_id="${projectId || 'your-project-id'}",
-    backend_url="https://innovative-learning-production-7c85.up.railway.app/v1",
+    backend_url="${backendBaseUrl}",
 )
 
 # Add this to the file where your LLM calls happen
@@ -85,7 +143,7 @@ const nodeSnippet = `const axios = require('axios');
 async function trackLLM(model, response, latencyMs) {
   const { prompt_tokens = 0, completion_tokens = 0, total_tokens = 0 } = response.usage ?? {};
   await axios.post(
-    'https://innovative-learning-production-7c85.up.railway.app/v1/ingest/batch',
+    '${backendBaseUrl}/ingest/batch',
     { events: [{
       id: crypto.randomUUID(),
       project_id: '${projectId || 'your-project-id'}',
@@ -116,7 +174,7 @@ start = time.time()
 latency_ms = int((time.time() - start) * 1000)
 
 httpx.post(
-    "https://innovative-learning-production-7c85.up.railway.app/v1/ingest/batch",
+    "${backendBaseUrl}/ingest/batch",
     json={"events": [{
         "id": str(uuid.uuid4()),
         "project_id": "${projectId || 'your-project-id'}",
@@ -163,7 +221,7 @@ httpx.post(
           -webkit-font-smoothing: antialiased;
         }
 
-        .ob-wrap { width: 100%; max-width: 540px; }
+        .ob-wrap { width: 100%; max-width: 620px; }
 
         .ob-logo {
           display: flex;
@@ -233,7 +291,7 @@ httpx.post(
           background: #fff;
           border: 1px solid #e4e4e7;
           border-radius: 12px;
-          padding: 28px;
+          padding: 32px;
           box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
 
@@ -543,6 +601,47 @@ httpx.post(
           border-radius: 7px;
           border-left: 3px solid #e4e4e7;
         }
+        .ob-env-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .ob-env-option {
+          min-height: 72px;
+          padding: 11px 12px;
+          text-align: left;
+          border: 1px solid #e4e4e7;
+          border-radius: 8px;
+          background: #fff;
+          cursor: pointer;
+          font-family: inherit;
+        }
+        .ob-env-option:hover { border-color: #a1a1aa; }
+        .ob-env-option.selected {
+          border-color: #0a0a0a;
+          box-shadow: 0 0 0 1px #0a0a0a;
+          background: #fafafa;
+        }
+        .ob-env-name { display: block; font-size: 12px; font-weight: 600; color: #18181b; }
+        .ob-env-desc { display: block; margin-top: 4px; font-size: 10.5px; line-height: 1.4; color: #71717a; }
+        .ob-skip {
+          width: 100%;
+          padding: 10px 12px;
+          margin-top: 9px;
+          background: transparent;
+          border: 0;
+          color: #71717a;
+          font-family: inherit;
+          font-size: 12px;
+          cursor: pointer;
+        }
+        .ob-skip:hover { color: #0a0a0a; }
+        @media (max-width: 520px) {
+          .ob-root { padding: 18px 14px; }
+          .ob-card { padding: 22px 18px; }
+          .ob-env-grid { grid-template-columns: 1fr; }
+          .ob-env-option { min-height: 0; }
+        }
       `}</style>
 
       <div className="ob-root">
@@ -557,6 +656,16 @@ httpx.post(
               <rect x="11" y="11" width="8" height="8" rx="1.5" fill="#0a0a0a"/>
             </svg>
             <span className="ob-logo-text">LLM Monitor</span>
+          </div>
+
+          <div className="flex items-center justify-between mb-5 text-xs text-[#71717a]">
+            <span>Workspace setup</span>
+            <button
+              className="inline-flex items-center gap-1.5 hover:text-[#0a0a0a]"
+              onClick={async () => { await signOut(); router.replace('/login') }}
+            >
+              <LogOut size={12} /> Sign out
+            </button>
           </div>
 
           {/* Steps */}
@@ -582,38 +691,56 @@ httpx.post(
             {step === 0 && (
               <div>
                 <div className="ob-title">Create your first project</div>
-                <div className="ob-subtitle">A project represents one of your applications.</div>
+                <div className="ob-subtitle">Start with one application. You can connect your LLM traffic now or return to setup later.</div>
 
                 {error && <div className="ob-error">{error}</div>}
 
                 <div className="ob-field">
-                  <label className="ob-label">Project name</label>
+                  <label className="ob-label" htmlFor="project-name">Application name</label>
                   <input
+                    id="project-name"
                     className="ob-input"
-                    placeholder="My AI App"
+                    placeholder="e.g. Customer support assistant"
                     value={projectName}
                     onChange={e => setProjectName(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleCreateProject()}
+                    required
+                    maxLength={100}
                   />
-                  <div className="ob-hint">e.g. Customer Support Bot, Code Review Assistant</div>
+                  <div className="ob-hint">A clear name helps you recognize this application in your workspace.</div>
                 </div>
 
                 <div className="ob-field">
-                  <label className="ob-label">Environment</label>
-                  <select className="ob-select" value={environment} onChange={e => setEnvironment(e.target.value)}>
-                    <option value="production">Production</option>
-                    <option value="staging">Staging</option>
-                    <option value="development">Development</option>
-                  </select>
+                  <div className="ob-label">Environment</div>
+                  <div className="ob-env-grid" role="radiogroup" aria-label="Application environment">
+                    {[
+                      { value: 'production', name: 'Production', description: 'Live customer traffic' },
+                      { value: 'staging', name: 'Staging', description: 'Pre-release testing' },
+                      { value: 'development', name: 'Development', description: 'Local development' },
+                    ].map(option => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={environment === option.value}
+                        className={`ob-env-option ${environment === option.value ? 'selected' : ''}`}
+                        onClick={() => setEnvironment(option.value)}
+                      >
+                        <span className="ob-env-name">{option.name}</span>
+                        <span className="ob-env-desc">{option.description}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="ob-field">
-                  <label className="ob-label">Primary LLM model</label>
+                  <label className="ob-label" htmlFor="primary-model">Primary LLM model <span className="font-normal text-[#999]">(optional)</span></label>
                   <input
+                    id="primary-model"
                     className="ob-input"
                     type="text"
                     list="models-list"
-                    placeholder="e.g. gpt-4o, llama-3.3-70b, claude-3-5-sonnet..."
+                    placeholder="e.g. gpt-4o"
                     value={model}
                     onChange={e => setModel(e.target.value)}
                   />
@@ -630,11 +757,11 @@ httpx.post(
                     <option value="llama-3.1-8b-instant" />
                     <option value="mistral-large-latest" />
                   </datalist>
-                  <div className="ob-hint">Type your model name or pick from suggestions</div>
+                  <div className="ob-hint">Used as the default label in your project. You can change it later.</div>
                 </div>
 
                 <button className="ob-btn" onClick={handleCreateProject} disabled={loading}>
-                  {loading ? 'Creating…' : <>Create Project <ArrowRight size={14} /></>}
+                  {loading ? 'Creating your project…' : <>Create project <ArrowRight size={14} /></>}
                 </button>
               </div>
             )}
@@ -676,8 +803,11 @@ httpx.post(
 
                 <div className="ob-divider" />
 
-                <button className="ob-btn" onClick={() => setStep(2)}>
-                  I've saved my key <ArrowRight size={14} />
+                <button className="ob-btn" onClick={() => router.replace('/dashboard')}>
+                  I've saved my key — open dashboard <ArrowRight size={14} />
+                </button>
+                <button className="ob-skip" onClick={() => setStep(2)}>
+                  Show me how to connect my app
                 </button>
               </div>
             )}
@@ -792,6 +922,9 @@ httpx.post(
                 <button className="ob-btn" onClick={() => setStep(3)}>
                   Done, let's go! <ArrowRight size={14} />
                 </button>
+                <button className="ob-skip" onClick={() => router.replace('/dashboard')}>
+                  Finish later — go to dashboard
+                </button>
               </div>
             )}
 
@@ -805,7 +938,7 @@ httpx.post(
                 <div className="ob-subtitle" style={{ marginTop: 6, marginBottom: 24 }}>
                   Start sending requests — your dashboard will populate within seconds.
                 </div>
-                <button className="ob-btn" onClick={() => router.push('/dashboard')}>
+                <button className="ob-btn" onClick={() => router.replace('/dashboard')}>
                   Open Dashboard <ExternalLink size={13} />
                 </button>
                 <a
@@ -825,4 +958,3 @@ httpx.post(
     </>
   )
 }
-

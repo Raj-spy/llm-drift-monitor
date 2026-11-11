@@ -16,7 +16,7 @@ function useCTA() {
   const router = useRouter()
   return async () => {
     const { data } = await supabase.auth.getSession()
-    router.push(data.session ? '/dashboard' : '/login')
+    router.push(data.session ? '/onboarding' : '/login')
   }
 }
 
@@ -560,5 +560,4 @@ await axios.post('/v1/ingest/batch', {
     </div>
   )
 }
-
 
